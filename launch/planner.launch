@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Gazebo options -->
+    <arg name="gazebo_gui" default="true" doc="Start Gazebo GUI"/>
+    <arg name="paused" default="false" doc="Start Gazebo paused"/>
+    <arg name="world_name" default="worlds/empty.world" doc="Gazebo world file"/>
+    <arg name="world_pose" default="-x 0 -y 0 -z 0 -R 0 -P 0 -Y 0" doc="Pose to spawn the robot at"/>
+
+    <!-- Start the robot state publisher, simulation, and controler -->
+    <include file="$(find robot_digital_twin)/moveit_launch/gazebo.launch">
+    </include>
+
+    <!-- Run the main MoveIt executable with trajectory execution -->
+    <include file="$(find robot_digital_twin)/moveit_launch/move_group.launch">
+        <arg name="allow_trajectory_execution" value="true" />
+        <arg name="moveit_controller_manager" value="ros_control" />
+        <arg name="info" value="true" />
+        <arg name="pipeline" value="ompl" />
+        <arg name="load_robot_description" value="false" />
+    </include>
+
+    <!-- Start moveit_rviz with the motion planning plugin -->
+    <include file="$(find robot_digital_twin)/moveit_launch/moveit_rviz.launch">
+        <arg name="rviz_config" value="$(find robot_digital_twin)/moveit_launch/moveit.rviz" />
+    </include>
+
+    <!-- Start the planning node -->
+    <node name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
+    </node>
+
+</launch>
