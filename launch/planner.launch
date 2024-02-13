@@ -5,27 +5,34 @@
     <arg name="paused" default="false" doc="Start Gazebo paused"/>
     <arg name="world_name" default="worlds/empty.world" doc="Gazebo world file"/>
     <arg name="world_pose" default="-x 0 -y 0 -z 0 -R 0 -P 0 -Y 0" doc="Pose to spawn the robot at"/>
+    <arg name="initial_joint_positions" default=" -J left_arm_joint_1 -0.0176 -J left_arm_joint_2 0.653 -J left_arm_joint_3 -0.0176 -J left_arm_joint_4 0.0706 -J left_arm_joint_5 -0.7589 -J left_arm_joint_6 0 -J right_arm_joint_1 -0.1412 -J right_arm_joint_2 1.0589 -J right_arm_joint_3 -0.7413 -J right_arm_joint_4 0.0882 -J right_arm_joint_5 1.6413 -J right_arm_joint_6 0.0353" doc="Initial joint configuration of the robot"/>
 
     <!-- Start the robot state publisher, simulation, and controler -->
-    <include file="$(find robot_digital_twin)/moveit_launch/gazebo.launch">
-    </include>
+    <!-- <include file="$(find dual_gp4_moveit_config)/launch/gazebo.launch">
+    </include> -->
+
+    <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch"/>
 
     <!-- Run the main MoveIt executable with trajectory execution -->
-    <include file="$(find robot_digital_twin)/moveit_launch/move_group.launch">
-        <arg name="allow_trajectory_execution" value="true" />
-        <arg name="moveit_controller_manager" value="ros_control" />
+    <!-- <include file="$(find dual_gp4_moveit_config)/launch/move_group.launch">
+        <arg name="allow_trajectory_execution" value="false" />
+        <arg name="moveit_controller_manager" value="fake" />
         <arg name="info" value="true" />
         <arg name="pipeline" value="ompl" />
-        <arg name="load_robot_description" value="false" />
-    </include>
+        <arg name="load_robot_description" value="true" />
+    </include> -->
 
     <!-- Start moveit_rviz with the motion planning plugin -->
-    <include file="$(find robot_digital_twin)/moveit_launch/moveit_rviz.launch">
-        <arg name="rviz_config" value="$(find robot_digital_twin)/moveit_launch/moveit.rviz" />
-    </include>
+    <!-- <include file="$(find dual_gp4_moveit_config)/launch/moveit_rviz.launch">
+        <arg name="rviz_config" value="$(find dual_gp4_moveit_config)/launch/moveit.rviz" />
+    </include> -->
 
     <!-- Start the planning node -->
+    <param name="/fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
     <node name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
     </node>
+    
+    <!-- Start the collision test node -->
+    <!-- <node name="test_collision" pkg="mr_planner" type="test_collision" output="screen"/> -->
 
 </launch>

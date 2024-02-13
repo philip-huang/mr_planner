@@ -1,0 +1,97 @@
+#ifndef MR_PLANNER_INSTANCE_H
+#define MR_PLANNER_INSTANCE_H
+
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/robot_state/robot_state.h>
+#include <moveit/planning_scene/planning_scene.h>
+#include <memory>
+#include <vector>
+#include <random>
+#include <Eigen/Geometry>
+
+// Abstract base class for the planning scene interface
+
+struct RobotPose {
+    int robot_id;
+    std::string robot_name; // same as group name in moveit
+    std::vector<double> joint_values;
+};
+
+class PlanInstance {
+public:
+    virtual void setNumberOfRobots(int num_robots);
+    virtual void setRobotNames(const std::vector<std::string>& robot_names) {
+        robot_names_ = robot_names;
+    }
+    virtual void setStartPose(int robot_id, const std::vector<double>& pose);
+    virtual void setGoalPose(int robot_id, const std::vector<double>& pose);
+    virtual bool checkCollision(const std::vector<RobotPose> &poses) const = 0;
+    virtual double computeDistance(const RobotPose& a, const RobotPose &b) const = 0;
+    virtual bool connect(const RobotPose& a, const RobotPose& b) = 0;
+    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result) = 0;
+    virtual bool sample(RobotPose &pose) = 0;
+    // Additional methods for future functionalities can be added here
+    virtual ~PlanInstance() = default;
+
+    virtual int getNumberOfRobots() const {
+        return num_robots_;
+    }
+
+    virtual std::vector<RobotPose> getStartPoses() const {
+        return start_poses_;
+    }
+
+    virtual std::vector<RobotPose> getGoalPoses() const {
+        return goal_poses_;
+    }
+
+    virtual RobotPose getStartPose(int robot_id) const {
+        return start_poses_[robot_id];
+    }
+
+    virtual RobotPose getGoalPose(int robot_id) const {
+        return goal_poses_[robot_id];
+    }
+
+    virtual RobotPose initRobotPose(int robot_id) const {
+        RobotPose pose;
+        pose.robot_id = robot_id;
+        pose.robot_name = robot_names_[robot_id];
+        pose.joint_values.resize(start_poses_[robot_id].joint_values.size());
+        return pose;
+    }
+
+protected:
+    int num_robots_;
+    std::vector<RobotPose> start_poses_;
+    std::vector<RobotPose> goal_poses_;
+    std::vector<std::string> robot_names_;
+};
+
+// Concrete implementation using MoveIt
+class MoveitInstance : public PlanInstance {
+public:
+    MoveitInstance(robot_model::RobotModelPtr robot_model, robot_state::RobotStatePtr kinematic_state,
+                   std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
+                   planning_scene::PlanningScenePtr planning_scene);
+    virtual bool checkCollision(const std::vector<RobotPose> &poses) const override;
+    virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
+    virtual bool connect(const RobotPose& a, const RobotPose& b) override;
+    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result) override;
+    virtual bool sample(RobotPose &pose) override;
+    // Implementation of abstract methods using MoveIt functionalities
+
+private:
+    // moveit move_group and planning_scene_interface pointers
+    robot_model::RobotModelPtr robot_model_;
+    robot_state::RobotStatePtr kinematic_state_;
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
+    planning_scene::PlanningScenePtr planning_scene_;
+
+    // random number generator
+    std::mt19937 rng_;
+
+};
+
+#endif // MR_PLANNER_INSTANCE_H

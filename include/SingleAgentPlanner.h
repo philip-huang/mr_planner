@@ -1,0 +1,162 @@
+#ifndef SINGLE_AGENT_PLANNER_H
+#define SINGLE_AGENT_PLANNER_H
+
+#include "instance.h" // Include the abstract problem instance definition
+#include <memory>
+#include <vector>
+#include <chrono>
+
+struct RobotTrajectory {
+    int robot_id;
+    std::vector<RobotPose> trajectory;
+    std::vector<double> times;
+};
+
+struct PlannerOptions {
+    double max_planning_time = 5.0;
+    int max_planning_iterations = 1000;
+    std::vector<RobotTrajectory> obstacles;
+};
+
+// Abstract planner class
+class SingleAgentPlanner {
+public:
+    // Initialize the planner with a specific planning problem instance
+    SingleAgentPlanner(std::shared_ptr<PlanInstance> instance,
+                      int robot_id) : instance_(instance), robot_id(robot_id),
+                      start_pose_(instance_->getStartPose(robot_id)),
+                      goal_pose_(instance_->getGoalPose(robot_id))
+                    {}
+    
+    // Perform the planning process
+    virtual bool plan(const PlannerOptions &options) = 0;
+
+    // Retrieve the plan (if needed, depending on your design, this could return a path, a series of actions, etc.)
+    // For simplicity, this could return a boolean indicating success for now,
+    // but you might want to define a more complex structure for the plan itself.
+    virtual bool getPlan(RobotTrajectory &solution) const = 0;
+
+    virtual ~SingleAgentPlanner() = default;
+
+    virtual bool terminate(const PlannerOptions &options) {
+        return false;
+    }
+
+protected:
+    int robot_id;
+    RobotPose start_pose_;
+    RobotPose goal_pose_;
+    std::shared_ptr<PlanInstance> instance_;
+};
+
+class Vertex {
+public:
+    Vertex() {};
+    Vertex(const RobotPose &pose) : pose(pose) {};
+
+    void setPose(const RobotPose &pose) {
+        this->pose = pose;
+    }
+
+    void setTime(double time) {
+        this->time = time;
+    }
+
+    void addParent(std::shared_ptr<Vertex> parent) {
+        parent = parent;
+        // find the root of the tree
+        root = parent;
+        while (root->parent != nullptr) {
+            root = root->parent;
+        }
+    }
+
+    RobotPose pose;
+    double time;
+    std::shared_ptr<Vertex> parent;
+    std::shared_ptr<Vertex> root;
+};
+ 
+
+class Tree {
+public:
+    Tree() {};
+
+    void addVertex(std::shared_ptr<Vertex> vertex) {
+        vertices.push_back(vertex);
+    }
+
+    void addRoot(std::shared_ptr<Vertex> root) {
+        roots.push_back(root);
+    }
+
+    std::vector<std::shared_ptr<Vertex>> roots;
+    std::vector<std::shared_ptr<Vertex>> vertices;
+};
+
+enum GrowState {
+    ADVANCED,
+    TRAPPED,
+    REACHED
+};
+
+// Example of a concrete planner class that implements the AbstractPlanner interface
+// This is where you would implement specific planning algorithms
+class STRRT : public SingleAgentPlanner {
+public:
+    STRRT(std::shared_ptr<PlanInstance> instance,
+                      int robot_id);
+
+    virtual bool plan(const PlannerOptions &options) override;
+
+    virtual bool getPlan(RobotTrajectory &solution) const override;
+
+    virtual bool terminate(const PlannerOptions &options) override;
+
+    bool shouldExpandTime();
+
+    void sampleConditionally(std::shared_ptr<Vertex> &new_sample);
+
+    void sampleGoal(std::shared_ptr<Vertex> &new_goal);
+
+    void expandTime();
+
+    GrowState extend(std::shared_ptr<Vertex> &new_sample, Tree &tree, bool goalTree);
+
+    GrowState connect(std::shared_ptr<Vertex> &new_sample, Tree &tree, bool goalTree);
+
+    void update_solution(std::shared_ptr<Vertex> &new_sample);
+
+    void prune_trees();
+
+    void swap_trees();
+
+    double distanceSpaceTime(const std::shared_ptr<Vertex> &a, const std::shared_ptr<Vertex> &b);
+
+    std::shared_ptr<Vertex> nearest(std::shared_ptr<Vertex> &sample, Tree &tree, bool goalTree);
+
+private:
+    Tree start_tree_;
+    Tree goal_tree_;
+    Tree* current_tree_ = &start_tree_;
+    Tree* other_tree_ = &goal_tree_;
+    bool goal_tree = false;
+
+    double min_time_ = 0.0;
+    double max_time_ = 0.0;
+    double max_deltat_ = 0.5;
+    bool time_bounded_ = false;
+    double vMax_ = 1.0;
+    int numIterations_ = 0;
+    int totalTreeSize = 0;
+    int batch_size = 100;
+    int cur_batch_size = 0;
+    std::chrono::time_point<std::chrono::system_clock> start_time_;
+
+    // random number generator
+    std::mt19937 rng_;
+};
+
+typedef std::shared_ptr<SingleAgentPlanner> SingleAgentPlannerPtr;
+
+#endif // SINGLE_AGENT_PLANNER_H

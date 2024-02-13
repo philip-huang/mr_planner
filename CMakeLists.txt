@@ -23,6 +23,7 @@ find_package(catkin REQUIRED COMPONENTS
   moveit_ros_planning_interface
   rviz_visual_tools
   moveit_visual_tools
+  tf2_geometry_msgs 
 )
 
 # /* -------------------------------------------------------------------------- */
@@ -35,6 +36,7 @@ catkin_package(
     moveit_core
     moveit_visual_tools
     moveit_ros_planning_interface
+    tf2_geometry_msgs 
   DEPENDS
     EIGEN3
 )
@@ -48,24 +50,24 @@ include_directories(SYSTEM ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${EIGEN3_
 # /* -------------------------------------------------------------------------- */
 # /*                               Create Library                               */
 # /* -------------------------------------------------------------------------- */
-# file(GLOB src_files src/mr_planner.cpp)
+file(GLOB src_files src/instance.cpp src/planner.cpp src/SingleAgentPlanner.cpp)
 
-# add_library(${PROJECT_NAME} SHARED ${src_files})
+add_library(${PROJECT_NAME} SHARED ${src_files})
 
-# target_link_libraries(${PROJECT_NAME}
-#   Eigen3::Eigen
-#   ${catkin_LIBRARIES}
-#   ${OMPL_LIBRARIES}
-# )
+target_link_libraries(${PROJECT_NAME}
+  Eigen3::Eigen
+  ${catkin_LIBRARIES}
+  ${OMPL_LIBRARIES}
+)
 
-# target_include_directories(${PROJECT_NAME} PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-#   $<INSTALL_INTERFACE:include>
-#   PRIVATE src)
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  PRIVATE src)
 
-# set_target_properties(${PROJECT_NAME} PROPERTIES
-#   VERSION ${PROJECT_VERSION}
-#   SOVERSION 1)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION 1)
  
 
 
@@ -85,3 +87,18 @@ target_link_libraries(mr_planner_node
 install(TARGETS mr_planner_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+
+add_executable(test_collision
+  src/demo_node.cpp
+)
+
+
+target_link_libraries(test_collision
+  # ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+)
+
+install(TARGETS test_collision
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
