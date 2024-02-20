@@ -26,11 +26,12 @@ public:
     }
     virtual void setStartPose(int robot_id, const std::vector<double>& pose);
     virtual void setGoalPose(int robot_id, const std::vector<double>& pose);
-    virtual bool checkCollision(const std::vector<RobotPose> &poses) const = 0;
+    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const = 0;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const = 0;
     virtual bool connect(const RobotPose& a, const RobotPose& b) = 0;
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result) = 0;
     virtual bool sample(RobotPose &pose) = 0;
+    virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
 
@@ -47,20 +48,16 @@ public:
     }
 
     virtual RobotPose getStartPose(int robot_id) const {
+        assert (robot_id < start_poses_.size());
         return start_poses_[robot_id];
     }
 
     virtual RobotPose getGoalPose(int robot_id) const {
+        assert (robot_id < goal_poses_.size());
         return goal_poses_[robot_id];
     }
 
-    virtual RobotPose initRobotPose(int robot_id) const {
-        RobotPose pose;
-        pose.robot_id = robot_id;
-        pose.robot_name = robot_names_[robot_id];
-        pose.joint_values.resize(start_poses_[robot_id].joint_values.size());
-        return pose;
-    }
+    virtual RobotPose initRobotPose(int robot_id) const;
 
 protected:
     int num_robots_;
@@ -75,11 +72,12 @@ public:
     MoveitInstance(robot_model::RobotModelPtr robot_model, robot_state::RobotStatePtr kinematic_state,
                    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
                    planning_scene::PlanningScenePtr planning_scene);
-    virtual bool checkCollision(const std::vector<RobotPose> &poses) const override;
+    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const override;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
     virtual bool connect(const RobotPose& a, const RobotPose& b) override;
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result) override;
     virtual bool sample(RobotPose &pose) override;
+    virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const override;
     // Implementation of abstract methods using MoveIt functionalities
 
 private:

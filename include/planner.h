@@ -43,7 +43,9 @@ public:
 
 protected:
     std::vector<SingleAgentPlannerPtr> agent_planners_;
-
+    std::vector<RobotTrajectory> solution_;
+    bool solved = false;
+    bool random_order_ = false;
 };
 
 #endif // MR_PLANNER_PLANNER_H

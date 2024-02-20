@@ -1,8 +1,9 @@
 #include "planner.h"
 #include "instance.h"
+#include "logger.h"
 
 PriorityPlanner::PriorityPlanner(std::shared_ptr<PlanInstance> instance) : AbstractPlanner(instance) {
-    
+    setLogLevel(LogLevel::HLINFO);
 }
 
 bool PriorityPlanner::plan() {
@@ -13,9 +14,11 @@ bool PriorityPlanner::plan() {
     for (int i = 0; i < num_robots_; i++) {
         order.push_back(i);
     }
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(order.begin(), order.end(), g);
+    if (random_order_) {
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(order.begin(), order.end(), g);
+    }
 
     // iterate through the robots in the randomized order
     std::vector<RobotTrajectory> solution;
@@ -31,15 +34,23 @@ bool PriorityPlanner::plan() {
             RobotTrajectory traj;
             planner->getPlan(traj);
             solution.push_back(traj);
+            log("Found plan for robot " + std::to_string(robot_id), LogLevel::HLINFO);
         } else {
+            log("Failed to plan for robot " + std::to_string(robot_id) + "!", LogLevel::ERROR);
             return false; // Return false if planning fails
         }
     }
 
+    solution_ = solution;
+    solved = true;
     return true; // Return true if planning succeeds
 }
 
 bool PriorityPlanner::getPlan(std::vector<RobotTrajectory> &solution) const {
-    // Retrieve the plan. For now, we just indicate success or failure.
-    return true; // Placeholder
+    // Retrieve the plan.
+    if (!solved) {
+        return false;
+    }
+    solution = solution_;
+    return true;
 }

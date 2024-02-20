@@ -12,18 +12,19 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_eigen/tf2_eigen.h>
 
+#include <planner.h>
 
 const std::string PLANNING_GROUP = "dual_arms";
 
-struct RobotPose {
+struct GoalPose {
     bool use_robot;
     geometry_msgs::PoseStamped pose;
     std::vector<double> joint_values;
 };
 
-bool parsePoseLine(const std::string& line, std::vector<RobotPose>& poses) {
+bool parsePoseLine(const std::string& line, std::vector<GoalPose>& poses) {
     std::istringstream stream(line);
-    RobotPose pose1, pose2;
+    GoalPose pose1, pose2;
     pose1.joint_values.resize(7, 0);
     pose2.joint_values.resize(7, 0);
 
@@ -55,7 +56,7 @@ bool parsePoseLine(const std::string& line, std::vector<RobotPose>& poses) {
     return true;
 }
 
-void readPosesFromFile(const std::string& file_path, std::vector<std::vector<RobotPose>>& all_poses) {
+void readPosesFromFile(const std::string& file_path, std::vector<std::vector<GoalPose>>& all_poses) {
     std::ifstream file(file_path);
     std::string line;
     if (!file.is_open()) {
@@ -64,7 +65,7 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Rob
     }
 
     while (getline(file, line)) {
-        std::vector<RobotPose> poses;
+        std::vector<GoalPose> poses;
         if (parsePoseLine(line, poses)) {
             all_poses.push_back(poses);
         }
@@ -75,7 +76,7 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Rob
 
 class DualArmPlanner {
 public:
-    DualArmPlanner() {
+    DualArmPlanner(const std::string &planner_type) : planner_type_(planner_type) {
         robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
         robot_model_ = robot_model_loader.getModel();
         move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(PLANNING_GROUP);
@@ -90,6 +91,11 @@ public:
         planning_scene_monitor_->requestPlanningSceneState();
         ros::Duration(0.3).sleep();
         planning_scene_ = planning_scene_monitor_->getPlanningScene();
+
+        instance_ = std::make_shared<MoveitInstance>(robot_model_, kinematic_state_, move_group_, planning_scene_);
+        instance_->setNumberOfRobots(2);
+        instance_->setRobotNames({"left_arm", "right_arm"});
+        pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
 
     }
 
@@ -153,7 +159,37 @@ public:
     }
 
 
-    bool planAndMoveJointSpace(const std::vector<double>& joint_values) {
+    bool planAndMoveJointSpace(const std::vector<GoalPose>& goal_poses, const std::vector<double>& joint_values) {
+        bool success;
+        if (planner_type_ == "BITstar") {
+                move_group_->setPlannerId("BITstar");
+                success = moveit_plan(joint_values);
+        } else if (planner_type_ == "RRTConnect") {
+                move_group_->setPlannerId("RRTConnect");
+                success = moveit_plan(joint_values);
+        } else if (planner_type_ == "PriorityPlanner") {
+                success = priority_plan(goal_poses);
+        }
+
+        return success;
+    }
+
+    bool priority_plan(const std::vector<GoalPose>& goal_poses) {
+        bool success = true;
+        std::vector<double> current_joints = move_group_->getCurrentJointValues();
+        for (size_t i = 0; i < goal_poses.size(); i++) {
+            instance_->setStartPose(i, std::vector<double>(current_joints.begin() + i*7, current_joints.begin() + (i+1)*7));
+            instance_->setGoalPose(i, goal_poses[i].joint_values);
+        }
+        success &= pp_planner_->plan();
+        if (success) {
+            std::vector<RobotTrajectory> solution;
+            success &= pp_planner_->getPlan(solution);
+        }
+        return success;
+    }
+
+    bool moveit_plan(const std::vector<double>& joint_values) {
         move_group_->setJointValueTarget(joint_values);
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         move_group_->setPlannerId("BITstar");
@@ -169,7 +205,7 @@ public:
         return success;
     }
 
-    bool planAndMovePose(const std::vector<RobotPose>& poses) {
+    bool planAndMovePose(const std::vector<GoalPose>& poses) {
         move_group_->setPoseTarget(poses[0].pose, "left_arm_link_camera");
         move_group_->setPoseTarget(poses[1].pose, "right_arm_link_camera");
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
@@ -185,7 +221,7 @@ public:
         return success;
     }
 
-    bool planAndMove(const std::vector<RobotPose>& poses) {
+    bool planAndMove(const std::vector<GoalPose>& poses) {
         std::vector<double> all_joints;
         std::vector<double> all_joints_given;
         for (auto pose : poses) {
@@ -194,7 +230,7 @@ public:
         for (size_t i = 0; i < all_joints_given.size(); i++) {
             ROS_INFO("Joint %lu: %f", i, all_joints_given[i]);
         }
-        return planAndMoveJointSpace(all_joints_given);
+        return planAndMoveJointSpace(poses, all_joints_given);
 
         // if (true /*poses[1].use_robot*/) {
         //     EigenSTL::vector_Isometry3d poses_eigen;
@@ -235,7 +271,7 @@ public:
         // return planAndMoveJointSpace(all_joints);
     }
 
-    void checkFK(const std::vector<RobotPose> &poses) {
+    void checkFK(const std::vector<GoalPose> &poses) {
         kinematic_state_->setJointGroupPositions("left_arm", poses[0].joint_values);
         kinematic_state_->setJointGroupPositions("right_arm", poses[1].joint_values);
         kinematic_state_->update();
@@ -257,31 +293,38 @@ private:
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
     planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
     planning_scene::PlanningScenePtr planning_scene_;
+
+    std::string planner_type_;
+    std::shared_ptr<MoveitInstance> instance_;
+    std::shared_ptr<PriorityPlanner> pp_planner_;
 };
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "dual_arm_joint_space_planner");
     
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
-    DualArmPlanner planner;
 
     std::string file_path;
     //retrieve the file path as ros param
-    nh.getParam("/fullorder_targets_filename", file_path);
+    nh.getParam("fullorder_targets_filename", file_path);
+    std::string planner_type;
+    nh.getParam("planner_type", planner_type);
+
+    DualArmPlanner planner(planner_type);
 
     // wait 2 seconds
     ros::Duration(2).sleep();
 
     // Read the robot poses
-    std::vector<std::vector<RobotPose>> all_poses;
+    std::vector<std::vector<GoalPose>> all_poses;
     readPosesFromFile(file_path, all_poses);
     ROS_INFO("Read %lu poses", all_poses.size());
 
     for (int i = 100; i < all_poses.size(); i++) {
-        std::vector<RobotPose> poses = all_poses[i];
+        std::vector<GoalPose> poses = all_poses[i];
         ROS_INFO("use robot 1: %d, use robot 2: %d", poses[0].use_robot, poses[1].use_robot);
         planner.planAndMove(poses);
         //planner.checkFK(poses);

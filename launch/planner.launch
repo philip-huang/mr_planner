@@ -11,7 +11,7 @@
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/gazebo.launch">
     </include> -->
 
-    <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch"/>
+    <include file="$(find dual_gp4_moveit_config)/launch/demo.launch"/>
 
     <!-- Run the main MoveIt executable with trajectory execution -->
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/move_group.launch">
@@ -28,8 +28,10 @@
     </include> -->
 
     <!-- Start the planning node -->
-    <param name="/fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
-    <node name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
+    
+    <node name="mr_planner_node" launch-prefix="xterm -e gdb --args" pkg="mr_planner" type="mr_planner_node" output="screen">
+        <param name="fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
+        <param name="planner_type" value="PriorityPlanner"/>
     </node>
     
     <!-- Start the collision test node -->

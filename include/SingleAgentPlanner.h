@@ -10,12 +10,15 @@ struct RobotTrajectory {
     int robot_id;
     std::vector<RobotPose> trajectory;
     std::vector<double> times;
+    double cost;
 };
 
+typedef std::vector<RobotTrajectory> DynamicObstacles;
+
 struct PlannerOptions {
-    double max_planning_time = 5.0;
+    double max_planning_time = 1.0;
     int max_planning_iterations = 1000;
-    std::vector<RobotTrajectory> obstacles;
+    DynamicObstacles obstacles;
 };
 
 // Abstract planner class
@@ -23,10 +26,10 @@ class SingleAgentPlanner {
 public:
     // Initialize the planner with a specific planning problem instance
     SingleAgentPlanner(std::shared_ptr<PlanInstance> instance,
-                      int robot_id) : instance_(instance), robot_id(robot_id),
-                      start_pose_(instance_->getStartPose(robot_id)),
-                      goal_pose_(instance_->getGoalPose(robot_id))
-                    {}
+                      int robot_id) : instance_(instance), robot_id_(robot_id)
+                     {}
+
+    virtual bool init(const PlannerOptions &options);
     
     // Perform the planning process
     virtual bool plan(const PlannerOptions &options) = 0;
@@ -43,7 +46,7 @@ public:
     }
 
 protected:
-    int robot_id;
+    int robot_id_;
     RobotPose start_pose_;
     RobotPose goal_pose_;
     std::shared_ptr<PlanInstance> instance_;
@@ -51,7 +54,6 @@ protected:
 
 class Vertex {
 public:
-    Vertex() {};
     Vertex(const RobotPose &pose) : pose(pose) {};
 
     void setPose(const RobotPose &pose) {
@@ -60,20 +62,27 @@ public:
 
     void setTime(double time) {
         this->time = time;
+        time_set = true;
     }
 
     void addParent(std::shared_ptr<Vertex> parent) {
-        parent = parent;
+        this->parent = parent;
         // find the root of the tree
-        root = parent;
-        while (root->parent != nullptr) {
-            root = root->parent;
+        this->root = parent;
+        while (this->root->parent != nullptr) {
+            this->root = this->root->parent;
         }
+    }
+
+    void addOtherParent(std::shared_ptr<Vertex> other_parent) {
+        this->otherParent = other_parent;
     }
 
     RobotPose pose;
     double time;
+    bool time_set = false;
     std::shared_ptr<Vertex> parent;
+    std::shared_ptr<Vertex> otherParent; // if this node is a connection point, it has another parent
     std::shared_ptr<Vertex> root;
 };
  
@@ -88,6 +97,7 @@ public:
 
     void addRoot(std::shared_ptr<Vertex> root) {
         roots.push_back(root);
+        vertices.push_back(root);
     }
 
     std::vector<std::shared_ptr<Vertex>> roots;
@@ -107,6 +117,8 @@ public:
     STRRT(std::shared_ptr<PlanInstance> instance,
                       int robot_id);
 
+    virtual bool init(const PlannerOptions &options) override;
+
     virtual bool plan(const PlannerOptions &options) override;
 
     virtual bool getPlan(RobotTrajectory &solution) const override;
@@ -115,17 +127,17 @@ public:
 
     bool shouldExpandTime();
 
-    void sampleConditionally(std::shared_ptr<Vertex> &new_sample);
+    bool sampleConditionally(std::shared_ptr<Vertex> &new_sample);
 
     void sampleGoal(std::shared_ptr<Vertex> &new_goal);
 
     void expandTime();
 
-    GrowState extend(std::shared_ptr<Vertex> &new_sample, Tree &tree, bool goalTree);
+    GrowState extend(const std::shared_ptr<Vertex> &new_sample, Tree &tree, std::shared_ptr<Vertex> &added_sample, bool goalTree);
 
-    GrowState connect(std::shared_ptr<Vertex> &new_sample, Tree &tree, bool goalTree);
+    GrowState connect(const std::shared_ptr<Vertex> &new_sample, Tree &tree, bool goalTree);
 
-    void update_solution(std::shared_ptr<Vertex> &new_sample);
+    void update_solution(std::shared_ptr<Vertex> &new_sample, bool goalTree);
 
     void prune_trees();
 
@@ -133,7 +145,9 @@ public:
 
     double distanceSpaceTime(const std::shared_ptr<Vertex> &a, const std::shared_ptr<Vertex> &b);
 
-    std::shared_ptr<Vertex> nearest(std::shared_ptr<Vertex> &sample, Tree &tree, bool goalTree);
+    void nearest(const std::shared_ptr<Vertex> &sample, std::shared_ptr<Vertex> &nearest_vertex, const Tree &tree, bool goalTree);
+
+    bool validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_ptr<Vertex> &b);
 
 private:
     Tree start_tree_;
@@ -149,9 +163,14 @@ private:
     double vMax_ = 1.0;
     int numIterations_ = 0;
     int totalTreeSize = 0;
+    int numValidSamples_ = 0;
     int batch_size = 100;
     int cur_batch_size = 0;
     std::chrono::time_point<std::chrono::system_clock> start_time_;
+
+    RobotTrajectory solution_;
+    double best_cost_ = std::numeric_limits<double>::infinity();
+    DynamicObstacles obstacles_;
 
     // random number generator
     std::mt19937 rng_;

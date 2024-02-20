@@ -50,7 +50,8 @@ include_directories(SYSTEM ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${EIGEN3_
 # /* -------------------------------------------------------------------------- */
 # /*                               Create Library                               */
 # /* -------------------------------------------------------------------------- */
-file(GLOB src_files src/instance.cpp src/planner.cpp src/SingleAgentPlanner.cpp)
+file(GLOB src_files src/instance.cpp src/planner.cpp src/SingleAgentPlanner.cpp
+                    src/logger.cpp)
 
 add_library(${PROJECT_NAME} SHARED ${src_files})
 
@@ -80,7 +81,7 @@ add_executable(mr_planner_node
 
 
 target_link_libraries(mr_planner_node
-  # ${PROJECT_NAME}
+  ${PROJECT_NAME}
   ${catkin_LIBRARIES}
 )
 
