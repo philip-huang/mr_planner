@@ -29,33 +29,8 @@ bool checkState(const moveit::planning_interface::MoveGroupInterface& move_group
     return true;
 }
 
-int main(int argc, char** argv) {
-    ros::init(argc, argv, "plan_node");
-    ros::NodeHandle nh;
-    ros::AsyncSpinner spinner(1);
-    spinner.start();
-
-    // Declare the MoveGroupInterface
-    std::string movegroup_name = "dual_arms";
-    moveit::planning_interface::MoveGroupInterface move_group(movegroup_name);
-    moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
-    
-    // Create the planning scene from robot model
-    // Planning scene monitor.
-    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>("robot_description");
-    planning_scene_monitor->startSceneMonitor();
-    planning_scene_monitor->startStateMonitor();
-    planning_scene_monitor->startWorldGeometryMonitor();
-    planning_scene_monitor->requestPlanningSceneState();
-    // wait 300 miliseconds for the planning scene to be ready
-    ros::Duration(0.3).sleep();
-    planning_scene::PlanningScenePtr planning_scene = planning_scene_monitor->getPlanningScene();
-
-    // // Visualization
-    // namespace rvt = rviz_visual_tools;
-    // moveit_visual_tools::MoveItVisualTools visual_tools("base"); // Change base_frame to your base frame
-    // visual_tools.deleteAllMarkers();
-
+void test_add_lego(const moveit::planning_interface::PlanningSceneInterface& planning_scene_interface,
+            moveit::planning_interface::MoveGroupInterface& move_group) {
     // add a 2x4 lego block to the planning scene
     moveit_msgs::CollisionObject co;
     co.header.frame_id = "left_arm_link_tool";
@@ -90,13 +65,23 @@ int main(int argc, char** argv) {
     ros::Duration(0.3).sleep();
     move_group.attachObject(co.id, "left_arm_link_tool");
     ROS_INFO("Add an object into the world");
+}
 
+void test_collision(moveit::planning_interface::MoveGroupInterface& move_group,
+            const planning_scene::PlanningScenePtr &planning_scene) {
+    StateType state1 = {-2.872096, -2.065656, 0.026423, 0.158731, 2.090787, -1.723881, 0.,
+                                 0., 0., 0., 0., 0., 0., 0.};
+    
+    bool isValid = checkState(move_group, planning_scene, state1);
+    ROS_INFO_NAMED("plan_node", "State (isValid): %s", isValid ? "VALID" : "INVALID");
+}
+
+void test_planning(moveit::planning_interface::MoveGroupInterface& move_group) {
     // Set the planner target
     move_group.setNamedTarget("left_push");
 
     // Declare the Plan object
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-
 
     // Plan the motion
     bool success = (move_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
@@ -110,12 +95,35 @@ int main(int argc, char** argv) {
         // visual_tools.trigger();
         move_group.execute(plan);
     }
+}
 
-    StateType state1 = {-2.872096, -2.065656, 0.026423, 0.158731, 2.090787, -1.723881, 0.,
-                                 0., 0., 0., 0., 0., 0., 0.};
+int main(int argc, char** argv) {
+    ros::init(argc, argv, "plan_node");
+    ros::NodeHandle nh;
+    ros::AsyncSpinner spinner(1);
+    spinner.start();
+
+    // Declare the MoveGroupInterface
+    std::string movegroup_name = "dual_arms";
+    moveit::planning_interface::MoveGroupInterface move_group(movegroup_name);
+    moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
     
-    bool isValid = checkState(move_group, planning_scene, state1);
-    ROS_INFO_NAMED("plan_node", "State (isValid): %s", isValid ? "VALID" : "INVALID");
+    // Create the planning scene from robot model
+    // Planning scene monitor.
+    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>("robot_description");
+    planning_scene_monitor->startSceneMonitor();
+    planning_scene_monitor->startStateMonitor();
+    planning_scene_monitor->startWorldGeometryMonitor();
+    planning_scene_monitor->requestPlanningSceneState();
+    // wait 300 miliseconds for the planning scene to be ready
+    ros::Duration(0.3).sleep();
+    planning_scene::PlanningScenePtr planning_scene = planning_scene_monitor->getPlanningScene();
+
+    // test_add_lego(planning_scene_interface, move_group);
+
+    // test_collision(move_group, planning_scene);
+
+    test_planning(move_group);
 
     ros::shutdown();
     return 0;

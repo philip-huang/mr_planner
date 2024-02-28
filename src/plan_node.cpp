@@ -494,9 +494,8 @@ int main(int argc, char** argv) {
     //retrieve the file path as ros param
     nh.getParam("fullorder_targets_filename", file_path);
     nh.getParam("planner_type", planner_type);
-    nh.getParam("config_fname", config_fname);
-    nh.getParam("root_pwd", root_pwd);
-
+    nh.param<std::string>("config_fname", config_fname, "");
+    nh.param<std::string>("root_pwd", root_pwd, "");
     DualArmPlanner planner(planner_type);
 
     // wait 2 seconds
@@ -508,9 +507,10 @@ int main(int argc, char** argv) {
     ROS_INFO("Read %lu poses", all_poses.size());
 
     // Read the lego poses
-    planner.setLegoFactory(config_fname, root_pwd);
-    planner.initLegoPositions();
-
+    if (!config_fname.empty() && !root_pwd.empty()) {
+        planner.setLegoFactory(config_fname, root_pwd);
+        planner.initLegoPositions();
+    }
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
         ROS_INFO("use robot 1: %d, use robot 2: %d", poses[0].use_robot, poses[1].use_robot);

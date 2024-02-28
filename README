@@ -1,0 +1,12 @@
+## Multirobot Planner 
+
+This pacakage is a moveit-based multi-robot planning for lego manipulation
+
+# Installation
+Build the docker image and run it inside docker
+
+## Run demo
+
+```
+roslaunch mr_planner planner.launch
+```
