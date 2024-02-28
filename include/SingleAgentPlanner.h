@@ -16,8 +16,8 @@ struct RobotTrajectory {
 typedef std::vector<RobotTrajectory> DynamicObstacles;
 
 struct PlannerOptions {
-    double max_planning_time = 1.0;
-    int max_planning_iterations = 1000;
+    double max_planning_time = 0.5;
+    int max_planning_iterations = 10000;
     DynamicObstacles obstacles;
 };
 
@@ -76,6 +76,11 @@ public:
 
     void addOtherParent(std::shared_ptr<Vertex> other_parent) {
         this->otherParent = other_parent;
+
+        this->otherRoot = other_parent;
+        while (this->otherRoot->parent != nullptr) {
+            this->otherRoot = this->otherRoot->parent;
+        }
     }
 
     RobotPose pose;
@@ -84,6 +89,7 @@ public:
     std::shared_ptr<Vertex> parent;
     std::shared_ptr<Vertex> otherParent; // if this node is a connection point, it has another parent
     std::shared_ptr<Vertex> root;
+    std::shared_ptr<Vertex> otherRoot;
 };
  
 
@@ -98,6 +104,15 @@ public:
     void addRoot(std::shared_ptr<Vertex> root) {
         roots.push_back(root);
         vertices.push_back(root);
+    }
+
+    void removeVertex(std::shared_ptr<Vertex> vertex) {
+        for (auto it = vertices.begin(); it != vertices.end(); ++it) {
+            if (*it == vertex) {
+                vertices.erase(it);
+                break;
+            }
+        }
     }
 
     std::vector<std::shared_ptr<Vertex>> roots;
@@ -164,7 +179,7 @@ private:
     int numIterations_ = 0;
     int totalTreeSize = 0;
     int numValidSamples_ = 0;
-    int batch_size = 100;
+    int batch_size = 200;
     int cur_batch_size = 0;
     std::chrono::time_point<std::chrono::system_clock> start_time_;
 

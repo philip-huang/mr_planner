@@ -21,10 +21,39 @@ bool STRRT::init(const PlannerOptions &options) {
     start_tree_.addRoot(startVertex);
     totalTreeSize++;
 
-    min_time_ = instance_->computeDistance(start_pose_, goal_pose_) / vMax_;
-    max_time_ = min_time_ * 2.0;
-
     obstacles_ = options.obstacles;
+    
+    min_time_ = instance_->computeDistance(start_pose_, goal_pose_) / vMax_;
+    // find the last time when obstacles pass thru the goal poses
+    for (const RobotTrajectory &obs : obstacles_) {
+        double last_time = obs.times.back();
+        int num_points = last_time / 0.1 + 1;
+        int ind = 0;
+        RobotPose obs_i_pose;
+        for (int i = 0; i < num_points; i++) {
+            double t = i * 0.1;
+            while (ind + 1 < obs.times.size() && obs.times[ind + 1] <= t) {
+                ind++;
+            }
+            if (ind + 1 == obs.times.size()) {
+                // assuming obstacle stays at the end of the trajectory
+                obs_i_pose = obs.trajectory[ind];
+            } else {
+                double alpha = (t - obs.times[ind]) / (obs.times[ind + 1] - obs.times[ind]);
+                obs_i_pose = instance_->interpolate(obs.trajectory[ind], obs.trajectory[ind + 1], alpha);
+            }
+            if (!instance_->checkCollision({goal_pose_, obs_i_pose}, true)) {
+                // has collision
+                min_time_ = std::max(min_time_, t + 0.1);
+            }
+        }
+    }
+
+    if (min_time_ < 1e-6) {
+        log("No need to plan for static agent", LogLevel::INFO);
+        return false;
+    }
+    max_time_ = min_time_ * 2.0;
 
     return true;
 }
@@ -33,10 +62,51 @@ bool STRRT::plan(const PlannerOptions &options) {
 
     start_time_ = std::chrono::high_resolution_clock::now();
 
-    init(options);
+    if (!init(options)) {
+        best_cost_ = 0.0;
+        solution_.robot_id = robot_id_;
+        solution_.times.clear();
+        solution_.trajectory.clear();
+        solution_.times.push_back(0.0);
+        solution_.trajectory.push_back(goal_pose_);
+        log("Plan is just the start/goal pose", LogLevel::INFO);
+        return true;
+    }
 
     // 1. Start the binary tree with a start and goal poses
     // 2. Sample a random pose
+
+    // connect the start and goal poses in minimum time
+    auto goalVertex = std::make_shared<Vertex>(goal_pose_);
+    goalVertex->setTime(min_time_ + 1e-3);
+    goal_tree_.addRoot(goalVertex);
+    totalTreeSize++;
+
+    if (connect(goalVertex, start_tree_, false) == REACHED) {
+        log("Connected start and goal in minimum time", LogLevel::INFO);
+        best_cost_ = goalVertex->time;
+        std::vector<std::shared_ptr<Vertex>> path;
+        std::shared_ptr<Vertex> current = goalVertex;
+        solution_.robot_id = robot_id_;
+        solution_.cost = goalVertex->time;
+        solution_.times.clear();
+        solution_.trajectory.clear();
+        while (current != nullptr) {
+            solution_.times.push_back(current->time);
+            solution_.trajectory.push_back(current->pose);
+            current = current->parent;
+        }
+        std::reverse(solution_.times.begin(), solution_.times.end());
+        std::reverse(solution_.trajectory.begin(), solution_.trajectory.end());
+
+        for (int i = 0; i < solution_.times.size(); i++) {
+            log(solution_.trajectory[i], LogLevel::DEBUG);
+            log("solution times: " + std::to_string(solution_.times[i]), LogLevel::DEBUG);
+        }
+
+        return true;
+    }
+
     
     while (!terminate(options)) {
         log("iteration: " + std::to_string(numIterations_) 
@@ -65,6 +135,7 @@ bool STRRT::plan(const PlannerOptions &options) {
         bool found_sample = sampleConditionally(new_sample);
         if (!found_sample) {
             log("Failed to sample new pose", LogLevel::DEBUG);
+            swap_trees();
             continue;
         }
         numValidSamples_++;
@@ -149,6 +220,7 @@ bool STRRT::sampleConditionally(std::shared_ptr<Vertex> &new_sample) {
         double max_time = max_time_ - instance_->computeDistance(newpose, goal_pose_) / vMax_;
         if (min_time > max_time) {
             found_sample = false;
+            log("sample pose not reachable", LogLevel::DEBUG);
             continue;
         }
         
@@ -180,18 +252,21 @@ void STRRT::nearest(const std::shared_ptr<Vertex> &sample, std::shared_ptr<Verte
         else {
             distance = distanceSpaceTime(vertex, sample);
         }
-        if (distance <= min_distance) {
+        if (distance < min_distance) {
             min_distance = distance;
             nearest_vertex = vertex;
         }
     }
-    assert(nearest_vertex != nullptr);
 }
 
 GrowState STRRT::extend(const std::shared_ptr<Vertex> &new_sample, Tree &tree, std::shared_ptr<Vertex> &delta_vertex, bool goalTree) {
     // find the nearest vertex in the tree
     std::shared_ptr<Vertex> nearest_vertex;
     nearest(new_sample, nearest_vertex, tree, goalTree);
+    if (nearest_vertex == nullptr) {
+        log("nearest vertex is null", LogLevel::DEBUG);
+        return TRAPPED;
+    }
     log("nearest vertex:", LogLevel::DEBUG);
     log(nearest_vertex->pose, LogLevel::DEBUG);
     log("nearest vertex time: " + std::to_string(nearest_vertex->time), LogLevel::DEBUG);
@@ -261,12 +336,13 @@ GrowState STRRT::extend(const std::shared_ptr<Vertex> &new_sample, Tree &tree, s
         }
         
         if (valid_motion) {
-            tree.addVertex(delta_vertex);
             if (delta_vertex->parent == nullptr) {
+                tree.addVertex(delta_vertex);
                 delta_vertex->addParent(nearest_vertex);
                 log("add parent to delta vertex", LogLevel::DEBUG);
             }
             else {
+                assert(reached == true);
                 delta_vertex->addOtherParent(nearest_vertex);
                 log("add other parent to delta vertex", LogLevel::DEBUG);
             }
@@ -298,7 +374,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
     int num_steps = (t2 - t1) / 0.1 + 1;
 
     std::vector<std::vector<RobotPose>> obs_poses;
-    // precompute all the obstacle poses
+    // precompute all the obstacle poses for all the obstacle robots
     obs_poses.reserve(obstacles_.size());
     for (const RobotTrajectory &obs : obstacles_) {
         std::vector<RobotPose> obs_i_pose;
@@ -316,6 +392,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
                 obs_i_pose.push_back(obs.trajectory[ind]);
             } else {
                 double alpha = (t - obs.times[ind]) / (obs.times[ind + 1] - obs.times[ind]);
+                log("alpha: (obs) " + std::to_string(obs.times[ind]) + " " + std::to_string(obs.times[ind + 1]) + " " + std::to_string(t), LogLevel::DEBUG);
                 RobotPose obs_i_pose_s = instance_->interpolate(obs.trajectory[ind], obs.trajectory[ind + 1], alpha);
                 obs_i_pose.push_back(obs_i_pose_s);
             }
@@ -327,6 +404,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
     for (int s = 0; s < num_steps; s++) {
         double t = t1 + s * 0.1;
         double alpha = (t - t1) / (t2 - t1);
+        log("alpha: (own) " + std::to_string(t1) + " " + std::to_string(t2) + " " + std::to_string(t), LogLevel::DEBUG);
         RobotPose a_pose = instance_->interpolate(a->pose, b->pose, alpha);
         std::vector<RobotPose> all_poses;
         all_poses.push_back(a_pose);
@@ -390,7 +468,7 @@ void STRRT::update_solution(std::shared_ptr<Vertex> &new_sample, bool goalTree) 
             solution_.times.push_back(vertex->time);
             solution_.trajectory.push_back(vertex->pose);
         }
-        log("Found a better solution with cost: " + std::to_string(best_cost_), LogLevel::HLINFO);
+        log("Found a better solution with cost: " + std::to_string(best_cost_), LogLevel::INFO);
     }
 
     time_bounded_ = true;

@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit_visual_tools/moveit_visual_tools.h>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 
 // define Statetype as a vector of doubles
@@ -37,6 +38,7 @@ int main(int argc, char** argv) {
     // Declare the MoveGroupInterface
     std::string movegroup_name = "dual_arms";
     moveit::planning_interface::MoveGroupInterface move_group(movegroup_name);
+    moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
     
     // Create the planning scene from robot model
     // Planning scene monitor.
@@ -53,6 +55,41 @@ int main(int argc, char** argv) {
     // namespace rvt = rviz_visual_tools;
     // moveit_visual_tools::MoveItVisualTools visual_tools("base"); // Change base_frame to your base frame
     // visual_tools.deleteAllMarkers();
+
+    // add a 2x4 lego block to the planning scene
+    moveit_msgs::CollisionObject co;
+    co.header.frame_id = "left_arm_link_tool";
+    co.header.stamp = ros::Time::now();
+    co.id = "lego_block";
+
+    // define shape primitive
+    shape_msgs::SolidPrimitive primitive;
+    primitive.type = primitive.BOX;
+    primitive.dimensions.resize(3);
+    primitive.dimensions[primitive.BOX_X] = 0.016; // 2 stud, 1 stud = 7.8mm
+    primitive.dimensions[primitive.BOX_Y] = 0.032; // 4 stud
+    primitive.dimensions[primitive.BOX_Z] = 0.012; // 1 stud height = 9.6mm + 1.7mm
+
+    // define pose relative to frame id
+    
+    geometry_msgs::Pose box_pose;
+    box_pose.orientation.w = 1.0;
+    box_pose.position.x = 0.006;
+    box_pose.position.y = 0.0;
+    box_pose.position.z = 0.07;
+
+    co.primitives.push_back(primitive);
+    co.primitive_poses.push_back(box_pose);
+    co.operation = co.ADD;
+
+    std::vector<moveit_msgs::CollisionObject> collision_objects;
+    collision_objects.push_back(co);
+    planning_scene_interface.addCollisionObjects(collision_objects);
+    
+    // wait 300 miliseconds for the planning scene to be ready
+    ros::Duration(0.3).sleep();
+    move_group.attachObject(co.id, "left_arm_link_tool");
+    ROS_INFO("Add an object into the world");
 
     // Set the planner target
     move_group.setNamedTarget("left_push");

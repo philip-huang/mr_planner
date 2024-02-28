@@ -69,8 +69,21 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 set_target_properties(${PROJECT_NAME} PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION 1)
- 
 
+file(GLOB lego_files src/lego/*.cpp src/lego/Utils/*.cpp)
+
+add_library(lego SHARED ${lego_files})
+
+target_link_libraries(lego
+  Eigen3::Eigen
+  ${catkin_LIBRARIES}
+  jsoncpp
+)
+
+target_include_directories(lego PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  PRIVATE src)
 
 # /* -------------------------------------------------------------------------- */
 # /*                             Testing Executables                            */
@@ -82,6 +95,7 @@ add_executable(mr_planner_node
 
 target_link_libraries(mr_planner_node
   ${PROJECT_NAME}
+  lego
   ${catkin_LIBRARIES}
 )
 

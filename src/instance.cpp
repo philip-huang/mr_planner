@@ -34,7 +34,7 @@ RobotPose PlanInstance::initRobotPose(int robot_id) const {
 }
 
 bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {
-    /* check if there is robot-robot or scene collision for a set of poses for all robots*/
+    /* check if there is robot-robot or scene collision for a set of poses for some robots*/
     /* true if no collision, false if has collision*/
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
