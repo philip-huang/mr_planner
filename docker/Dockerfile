@@ -15,14 +15,7 @@ RUN apt-get update && apt-get install -y \
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     wget \
-    && rm -rf /var/lib/apt/lists/*
-
-# Add the Blender repository
-RUN add-apt-repository ppa:thomas-schiex/blender
-
-# Install Blender
-RUN apt-get update && apt-get install -y \
-    blender \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PyYAML
@@ -44,9 +37,15 @@ RUN mkdir -p catkin_ws/src && \
     /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin init'
 
 # clone the mr_planner repository
-RUN cd catkin_ws/src && \
-    git clone https://github.com/philip-huang/mr_planner.git \
+RUN cd catkin_ws/src \
+    && git clone https://github.com/philip-huang/mr_planner.git \
     && git clone https://github.com/philip-huang/moveit_configs.git
+
+
+RUN cd catkin_ws/src \
+    && git clone https://github.com/intelligent-control-lab/Robot_Digital_Twin.git \
+    && cd Robot_Digital_Twin \
+    && git checkout moveit_sim
 
 # build the workspace
 RUN /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin build'
