@@ -1,0 +1,23 @@
+name: Docker Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      name: Check out the repo content
+
+    - name: Build Docker image
+      run: |
+        cd docker
+        docker build . -t mr_planner-image
+
+    - name: Run container
+      run: docker run -d --name mr_planner-container mr_planner-image
+
+    - name: Check if ROS launch file works
+      run: docker exec my-container /bin/bash -c 'source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner demo.launch'
+

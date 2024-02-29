@@ -43,6 +43,14 @@ WORKDIR $HOME
 RUN mkdir -p catkin_ws/src && \
     /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin init'
 
+# clone the mr_planner repository
+RUN cd catkin_ws/src && \
+    git clone https://github.com/philip-huang/mr_planner.git \
+    && git clone https://github.com/philip-huang/moveit_configs.git
+
+# build the workspace
+RUN /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin build'
+
 # Source ROS setup file
 RUN echo "source /opt/ros/noetic/setup.bash" >> $HOME/.bashrc && \
     echo "source $HOME/catkin_ws/devel/setup.bash" >> $HOME/.bashrc

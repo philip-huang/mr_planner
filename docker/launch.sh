@@ -9,6 +9,5 @@ sudo docker run -it \
     --env="DISPLAY" \
     --env="QT_X11_NO_MITSHM=1" \
     --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-    --name=mfi1 \
-    -v /home/philip/catkin_ws/src:/root/catkin_ws/src \
-    mfi
+    --name=mr_planner1 \
+    mr_planner
