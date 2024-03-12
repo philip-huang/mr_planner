@@ -16,5 +16,5 @@ jobs:
         docker build . -t mr_planner-image
 
     - name: Check if ROS launch file works
-      run: timeout --signal=SIGINT 1m docker run --rm --name mr_planner-container mr_planner -c "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner demo.launch use_rviz:=false"
+      run: timeout --signal=SIGINT 1m docker run --rm --name mr_planner-container mr_planner-image -c "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner demo.launch use_rviz:=false"
 
