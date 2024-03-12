@@ -45,7 +45,7 @@ RUN cd catkin_ws/src \
 RUN cd catkin_ws/src \
     && git clone https://github.com/intelligent-control-lab/Robot_Digital_Twin.git \
     && cd Robot_Digital_Twin \
-    && git checkout moveit_sim
+    && git checkout dual-arm-mfi
 
 # build the workspace
 RUN /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin build'
