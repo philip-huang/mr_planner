@@ -195,8 +195,6 @@ public:
             instance_->setGoalPose(i, goal_poses[i].joint_values);
         }
         // Use the PlanningSceneMonitor to update and get the current planning scene
-        planning_scene_monitor::LockedPlanningSceneRW planning_scene_rw(planning_scene_monitor_);
-        instance_->updatePlanningScene(planning_scene_rw->diff());
 
         success &= pp_planner_->plan();
         if (success) {
@@ -479,6 +477,7 @@ public:
         moveit_msgs::ApplyPlanningScene srv;
         srv.request.scene = planning_scene;
         planning_scene_diff_client.call(srv);
+        planning_scene_->usePlanningSceneMsg(planning_scene);
         
         ROS_INFO("Added collision object %s to world frame", name.c_str());
 
@@ -542,6 +541,7 @@ public:
         moveit_msgs::ApplyPlanningScene srv;
         srv.request.scene = planning_scene;
         planning_scene_diff_client.call(srv);
+        planning_scene_->usePlanningSceneMsg(planning_scene);
 
         ROS_INFO("Attached collision object %s to %s", name.c_str(), link_name.c_str());
     }
@@ -572,6 +572,7 @@ public:
         moveit_msgs::ApplyPlanningScene srv;
         srv.request.scene = planning_scene;
         planning_scene_diff_client.call(srv);
+        planning_scene_->usePlanningSceneMsg(planning_scene);
 
         ROS_INFO("Removed collision object %s", name.c_str());
     }
@@ -646,6 +647,7 @@ public:
         planning_scene.allowed_collision_matrix = acm;
         srv_apply.request.scene = planning_scene;
         planning_scene_diff_client.call(srv_apply);
+        planning_scene_->usePlanningSceneMsg(planning_scene);
 
         if (allow)
             ROS_INFO("Allow collision between %s and %s", object_id.c_str(), link_name.c_str());

@@ -50,7 +50,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     std::vector<std::string> acm_names;
     acm.getAllEntryNames(acm_names);
     for (const auto &entry : acm_names) {
-        log("ACM entry: " + entry, LogLevel::HLINFO);
+        log("ACM entry: " + entry, LogLevel::DEBUG);
     }
 
     int index = 0;

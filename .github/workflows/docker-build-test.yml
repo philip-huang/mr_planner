@@ -15,9 +15,6 @@ jobs:
         cd docker
         docker build . -t mr_planner-image
 
-    - name: Run container
-      run: docker run -d --name mr_planner-container mr_planner-image tail -f /dev/null
-
     - name: Check if ROS launch file works
-      run: docker exec mr_planner-container /bin/bash -c 'source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner demo.launch'
+      run: timeout --signal=SIGINT 1m docker run --rm --name mr_planner-container mr_planner -c "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner demo.launch use_rviz:=false"
 

@@ -31,7 +31,7 @@
     
     <node launch-prefix="xterm -e gdb --args" name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
         <param name="fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
-        <param name="planner_type" value="RRTConnect"/>
+        <param name="planner_type" value="PrioritizedPlanning"/>
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
     </node>
