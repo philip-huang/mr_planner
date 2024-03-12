@@ -72,6 +72,9 @@ public:
     MoveitInstance(robot_model::RobotModelPtr robot_model, robot_state::RobotStatePtr kinematic_state,
                    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
                    planning_scene::PlanningScenePtr planning_scene);
+    void updatePlanningScene(planning_scene::PlanningScenePtr planning_scene) {
+        planning_scene_ = planning_scene;
+    }
     virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const override;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
     virtual bool connect(const RobotPose& a, const RobotPose& b) override;

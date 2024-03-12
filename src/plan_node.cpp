@@ -7,6 +7,10 @@
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <moveit/robot_state/robot_state.h>
 
+#include <moveit_msgs/PlanningScene.h>
+#include <moveit_msgs/AttachedCollisionObject.h>
+#include <moveit_msgs/ApplyPlanningScene.h>
+
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <eigen_conversions/eigen_msg.h>
@@ -95,6 +99,11 @@ public:
         ros::Duration(0.3).sleep();
         planning_scene_ = planning_scene_monitor_->getPlanningScene();
 
+        planning_scene_diff_client = nh_.serviceClient<moveit_msgs::ApplyPlanningScene>("apply_planning_scene");
+        planning_scene_diff_client.waitForExistence();
+        get_planning_scene_client = nh_.serviceClient<moveit_msgs::GetPlanningScene>("get_planning_scene");
+        get_planning_scene_client.waitForExistence();
+
         instance_ = std::make_shared<MoveitInstance>(robot_model_, kinematic_state_, move_group_, planning_scene_);
         instance_->setNumberOfRobots(2);
         instance_->setRobotNames({"left_arm", "right_arm"});
@@ -168,6 +177,7 @@ public:
                 move_group_->setPlannerId("BITstar");
                 success = moveit_plan(joint_values);
         } else if (planner_type_ == "RRTConnect") {
+                move_group_->setPlanningTime(1.0);
                 move_group_->setPlannerId("RRTConnect");
                 success = moveit_plan(joint_values);
         } else if (planner_type_ == "PrioritizedPlanning") {
@@ -184,6 +194,10 @@ public:
             instance_->setStartPose(i, std::vector<double>(current_joints.begin() + i*7, current_joints.begin() + (i+1)*7));
             instance_->setGoalPose(i, goal_poses[i].joint_values);
         }
+        // Use the PlanningSceneMonitor to update and get the current planning scene
+        planning_scene_monitor::LockedPlanningSceneRW planning_scene_rw(planning_scene_monitor_);
+        instance_->updatePlanningScene(planning_scene_rw->diff());
+
         success &= pp_planner_->plan();
         if (success) {
             ROS_INFO("Prioritized Planning succeeded");
@@ -199,7 +213,7 @@ public:
             for (size_t i = 0; i < solution.size(); i++) {
                 max_time = std::max(max_time, solution[i].times.back());
             }
-            double dt = 0.1;
+            double dt = 0.01;
             int num_points = max_time / dt + 1;
             joint_traj.points.resize(num_points);
             for (int i = 0; i < num_points; i++) {
@@ -250,6 +264,7 @@ public:
 
     bool moveit_plan(const std::vector<double>& joint_values) {
         move_group_->setJointValueTarget(joint_values);
+        ROS_INFO("Planning with planner: %s", move_group_->getPlannerId().c_str());
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         bool success = (move_group_->plan(my_plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
 
@@ -310,9 +325,9 @@ public:
         for (auto pose : poses) {
             all_joints_given.insert(all_joints_given.end(), pose.joint_values.begin(), pose.joint_values.end());
         }
-        for (size_t i = 0; i < all_joints_given.size(); i++) {
-            ROS_INFO("Joint %lu: %f", i, all_joints_given[i]);
-        }
+        // for (size_t i = 0; i < all_joints_given.size(); i++) {
+        //     ROS_INFO("Joint %lu: %f", i, all_joints_given[i]);
+        // }
         return planAndMoveJointSpace(poses, all_joints_given);
 
         // if (true /*poses[1].use_robot*/) {
@@ -391,15 +406,17 @@ public:
 
         std::string task_fname = root_pwd + config["Task_Graph_fname"].asString();
         std::ifstream task_file(task_fname, std::ifstream::binary);
-        Json::Value task_json;
-        task_file >> task_json;
+        task_file >> task_json_;
+        num_tasks_ = task_json_.size();
+        
+        std::string world_base_fname = root_pwd + config["world_base_fname"].asString();
 
         bool assemble = config["Start_with_Assemble"].asBool();
 
         set_state_client_ = nh_.serviceClient<gazebo_msgs::SetModelState>("/gazebo/set_model_state");
 
         lego_ptr_ = std::make_shared<lego_manipulation::lego::Lego>();
-        lego_ptr_->setup(env_setup_fname, lego_lib_fname, assemble, task_json, 
+        lego_ptr_->setup(env_setup_fname, lego_lib_fname, assemble, task_json_, world_base_fname,
                         r1_DH_fname, r1_DH_tool_fname, r1_DH_tool_disassemble_fname, r1_DH_tool_assemble_fname, r1_robot_base_fname, 
                         r2_DH_fname, r2_DH_tool_fname, r2_DH_tool_disassemble_fname, r2_DH_tool_assemble_fname, r2_robot_base_fname, 
                         1, set_state_client_);
@@ -441,21 +458,203 @@ public:
         // define pose relative to frame id
         
         geometry_msgs::Pose box_pose = lego_ptr_->get_init_brick_pose(name);
+        ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
 
         co.primitives.push_back(primitive);
         co.primitive_poses.push_back(box_pose);
         co.operation = co.ADD;
 
-        std::vector<moveit_msgs::CollisionObject> collision_objects;
-        collision_objects.push_back(co);
-        planning_scene_interface_->addCollisionObjects(collision_objects);
+        // std::vector<moveit_msgs::CollisionObject> collision_objects;
+        // collision_objects.push_back(co);
+        // planning_scene_interface_->addCollisionObjects(collision_objects);
         
-        // wait 10 miliseconds for the planning scene to be ready
-        ros::Duration(0.01).sleep();
-        move_group_->attachObject(co.id, "world");
-        ROS_INFO("Add an object into the world");
+        // // wait 10 miliseconds for the planning scene to be ready
+        // ros::Duration(0.01).sleep();
+        // move_group_->attachObject(co.id, "world", {"left_arm_link_tool"});
 
+        lego_collision_objects_[name] = co;
+        moveit_msgs::PlanningScene planning_scene;
+        planning_scene.world.collision_objects.push_back(co);
+        planning_scene.is_diff = true;
+        moveit_msgs::ApplyPlanningScene srv;
+        srv.request.scene = planning_scene;
+        planning_scene_diff_client.call(srv);
+        
+        ROS_INFO("Added collision object %s to world frame", name.c_str());
+
+        moveit_msgs::GetPlanningScene srv_get;
+        srv_get.request.components.components = moveit_msgs::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+        if (!get_planning_scene_client.call(srv_get)) {
+            ROS_WARN("Failed to get planning scene collision matrix");
+            return;
+        }
+        current_acm_ = srv_get.response.scene.allowed_collision_matrix; 
     }
+
+    void attachMoveitCollisionObject(const std::string &name, const std::string &link_name) {
+        
+        moveit_msgs::AttachedCollisionObject co;
+        co.link_name = link_name;
+        co.object.header.frame_id = link_name;
+        co.object.header.stamp = ros::Time::now();
+        co.object.id = name;
+
+        // define shape primitive
+        shape_msgs::SolidPrimitive primitive;
+        primitive.type = primitive.BOX;
+        primitive.dimensions.resize(3);
+
+        double x, y, z;
+        lego_ptr_->get_brick_sizes(name, x, y, z);
+        primitive.dimensions[primitive.BOX_X] = x; // 2 stud, 1 stud = 7.8mm
+        primitive.dimensions[primitive.BOX_Y] = y; // 4 stud
+        primitive.dimensions[primitive.BOX_Z] = z; // 1 stud height = 9.6mm + 1.7mm
+
+        // // define pose relative to frame id
+        geometry_msgs::Pose box_pose;
+        box_pose.orientation.w = 1.0;
+        box_pose.position.x = 0.006;
+        box_pose.position.y = 0.0;
+        box_pose.position.z = 0.07;
+        ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
+
+        //co.object.primitives.push_back(primitive);
+        //co.object.primitive_poses.push_back(box_pose);
+        co.object.operation = co.object.ADD;
+
+        // std::vector<moveit_msgs::CollisionObject> collision_objects;
+        // collision_objects.push_back(co);
+        // planning_scene_interface_->addCollisionObjects(collision_objects);
+
+        // ros::Duration(0.01).sleep();
+        // move_group_->attachObject(name, link_name);
+
+        moveit_msgs::CollisionObject co_remove;
+        co_remove.id = name;
+        co_remove.header.frame_id = "world";
+        co_remove.operation = co_remove.REMOVE;
+
+        moveit_msgs::PlanningScene planning_scene;
+        planning_scene.is_diff = true;
+        planning_scene.world.collision_objects.push_back(co_remove);
+        planning_scene.robot_state.attached_collision_objects.push_back(co);
+        planning_scene.robot_state.is_diff = true;
+        moveit_msgs::ApplyPlanningScene srv;
+        srv.request.scene = planning_scene;
+        planning_scene_diff_client.call(srv);
+
+        ROS_INFO("Attached collision object %s to %s", name.c_str(), link_name.c_str());
+    }
+
+    void detachMoveitCollisionObject(const std::string &name) {
+        // std::vector<std::string> object_ids;
+        // object_ids.push_back(name);
+        // planning_scene_interface_->removeCollisionObjects(object_ids);
+
+        // ros::Duration(0.01).sleep();
+        //move_group_->detachObject(name);
+
+        moveit_msgs::AttachedCollisionObject co_remove;
+        co_remove.object.id = name;
+        co_remove.link_name = "left_arm_link_tool";
+        co_remove.object.operation = co_remove.object.REMOVE;
+
+        moveit_msgs::CollisionObject co;
+        co.id = name;
+        co.header.frame_id = "world";
+        co.operation = co.ADD;
+
+        moveit_msgs::PlanningScene planning_scene;
+        planning_scene.is_diff = true;
+        planning_scene.world.collision_objects.push_back(co);
+        planning_scene.robot_state.is_diff = true;
+        planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
+        moveit_msgs::ApplyPlanningScene srv;
+        srv.request.scene = planning_scene;
+        planning_scene_diff_client.call(srv);
+
+        ROS_INFO("Removed collision object %s", name.c_str());
+    }
+
+    void getLegoBrickName(int task_idx, std::string &brick_name) {
+        auto cur_graph_node = task_json_[std::to_string(task_idx)];
+        brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
+    }
+
+    bool setCollision(const std::string& object_id, const std::string& link_name, bool allow) {
+
+        // Get the Allowed Collision Matrix (ACM)
+        // Use the PlanningSceneMonitor to get the current planning scene
+        moveit_msgs::PlanningScene planning_scene;
+        planning_scene.is_diff = true;
+        moveit_msgs::AllowedCollisionMatrix &acm = current_acm_;
+
+        if (std::find(acm.entry_names.begin(), acm.entry_names.end(), object_id) == acm.entry_names.end()) {
+            acm.entry_names.push_back(object_id);
+
+            for (size_t i = 0; i < acm.entry_values.size(); i++) {
+                if (acm.entry_names[i] == link_name) {
+                    acm.entry_values[i].enabled.push_back(allow);
+                }
+                else if (lego_collision_objects_.find(acm.entry_names[i]) != lego_collision_objects_.end()) {
+                    acm.entry_values[i].enabled.push_back(true);
+                }
+                else {
+                    acm.entry_values[i].enabled.push_back(false);
+                }
+            }
+            moveit_msgs::AllowedCollisionEntry new_entry;
+            for (size_t i = 0; i < acm.entry_names.size(); i++) {
+                if (acm.entry_names[i] == link_name) {
+                    new_entry.enabled.push_back(allow);
+                }
+                else if (lego_collision_objects_.find(acm.entry_names[i]) != lego_collision_objects_.end()) {
+                    new_entry.enabled.push_back(true);
+                }
+                else {
+                    new_entry.enabled.push_back(false);
+                }
+            }
+            acm.entry_values.push_back(new_entry);
+        }
+        else {
+            for (size_t i = 0; i < acm.entry_names.size(); i++) {
+                for (size_t j = 0; j < acm.entry_names.size(); j++) {
+                    if (acm.entry_names[i] == object_id && acm.entry_names[j] == link_name) {
+                        acm.entry_values[i].enabled[j] = allow;
+                    }
+                    if (acm.entry_names[i] == link_name && acm.entry_names[j] == object_id) {
+                        acm.entry_values[i].enabled[j] = allow;
+                    }
+                }
+            }
+        }
+
+        // print the current ACM
+        // for (auto entry : acm.entry_names) {
+        //     ROS_INFO("ACM entry: %s", entry.c_str());
+        // }
+        // for (auto entry : acm.entry_values) {
+        //     std::string line;
+        //     for (auto val : entry.enabled) {
+        //         line += std::to_string(val) + " ";
+        //     }
+        //     ROS_INFO("ACM entry values: %s", line.c_str());
+        // }
+
+        moveit_msgs::ApplyPlanningScene srv_apply;
+        planning_scene.allowed_collision_matrix = acm;
+        srv_apply.request.scene = planning_scene;
+        planning_scene_diff_client.call(srv_apply);
+
+        if (allow)
+            ROS_INFO("Allow collision between %s and %s", object_id.c_str(), link_name.c_str());
+        else
+            ROS_INFO("Disallow collision between %s and %s", object_id.c_str(), link_name.c_str());
+
+        return true;
+    }
+
 
 private:
     ros::NodeHandle nh_;
@@ -469,9 +668,15 @@ private:
 
     // lego pointer
     lego_manipulation::lego::Lego::Ptr lego_ptr_;
+    Json::Value task_json_;
+    int num_tasks_ = 0;
+    std::map<std::string, moveit_msgs::CollisionObject> lego_collision_objects_;
+    moveit_msgs::AllowedCollisionMatrix current_acm_;
 
     // update gazebo state
     ros::ServiceClient set_state_client_;
+    ros::ServiceClient planning_scene_diff_client;
+    ros::ServiceClient get_planning_scene_client;
 
     std::string planner_type_;
     std::shared_ptr<MoveitInstance> instance_;
@@ -511,11 +716,38 @@ int main(int argc, char** argv) {
         planner.setLegoFactory(config_fname, root_pwd);
         planner.initLegoPositions();
     }
+
+    int mode = 1;
+    int task_idx = 1;
+    std::string brick_name;
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
-        ROS_INFO("use robot 1: %d, use robot 2: %d", poses[0].use_robot, poses[1].use_robot);
+
+        if (mode == 1) {
+            planner.getLegoBrickName(task_idx, brick_name);
+            planner.setCollision(brick_name, "left_arm_link_tool", true);
+        }
+        if (mode == 4) {
+            ROS_INFO("attach lego to robot 1");
+            planner.attachMoveitCollisionObject(brick_name, "left_arm_link_tool");
+        }
+        if (mode == 10) {
+            ROS_INFO("detach lego from robot 1");
+            planner.detachMoveitCollisionObject(brick_name);
+        }
+        if (mode == 12) {
+            planner.setCollision(brick_name, "left_arm_link_tool", false);
+        }
+
+        ROS_INFO("mode %d, task_id: %d, use robot 1: %d, use robot 2: %d", mode, task_idx, poses[0].use_robot, poses[1].use_robot);
         //planner.checkFK(poses);
         planner.planAndMove(poses);
+
+        mode ++;
+        if (mode == 13) {
+            mode = 0;
+            task_idx ++;
+        }
     }
     
 

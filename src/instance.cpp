@@ -46,6 +46,13 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     std::vector<double> all_joints;
     collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrixNonConst();
 
+    // print the acm entry names
+    std::vector<std::string> acm_names;
+    acm.getAllEntryNames(acm_names);
+    for (const auto &entry : acm_names) {
+        log("ACM entry: " + entry, LogLevel::HLINFO);
+    }
+
     int index = 0;
     for (int i = 0; i < num_robots_; i++) {
         std::string group = robot_names_[i];
