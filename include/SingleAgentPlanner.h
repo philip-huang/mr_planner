@@ -19,6 +19,14 @@ struct PlannerOptions {
     double max_planning_time = 0.5;
     int max_planning_iterations = 10000;
     DynamicObstacles obstacles;
+
+    // constructor
+    PlannerOptions() = default;
+    PlannerOptions(double max_planning_time, int max_planning_iterations)
+    {
+        this->max_planning_time = max_planning_time;
+        this->max_planning_iterations = max_planning_iterations;
+    }
 };
 
 // Abstract planner class
@@ -176,6 +184,7 @@ private:
     double max_deltat_ = 0.5;
     bool time_bounded_ = false;
     double vMax_ = 1.0;
+    double col_dt_ = 0.05;
     int numIterations_ = 0;
     int totalTreeSize = 0;
     int numValidSamples_ = 0;

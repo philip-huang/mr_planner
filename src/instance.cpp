@@ -1,10 +1,10 @@
 #include <instance.h>
 #include <logger.h>
 
-MoveitInstance::MoveitInstance(robot_model::RobotModelPtr robot_model, robot_state::RobotStatePtr kinematic_state,
+MoveitInstance::MoveitInstance(robot_state::RobotStatePtr kinematic_state,
                                std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
                                planning_scene::PlanningScenePtr planning_scene)
-    : robot_model_(robot_model), kinematic_state_(kinematic_state), move_group_(move_group), planning_scene_(planning_scene)
+    : kinematic_state_(kinematic_state), move_group_(move_group), planning_scene_(planning_scene)
 {}
 
 void PlanInstance::setNumberOfRobots(int num_robots) {
@@ -33,9 +33,13 @@ RobotPose PlanInstance::initRobotPose(int robot_id) const {
     return pose;
 }
 
+double PlanInstance::getVMax(int robot_id) {
+    return 1.0;
+}
+
 bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {
     /* check if there is robot-robot or scene collision for a set of poses for some robots*/
-    /* true if no collision, false if has collision*/
+    /* true if has collision, false if no collision*/
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
     c_req.group_name = move_group_->getName();
@@ -46,12 +50,12 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     std::vector<double> all_joints;
     collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrixNonConst();
 
-    // print the acm entry names
-    std::vector<std::string> acm_names;
-    acm.getAllEntryNames(acm_names);
-    for (const auto &entry : acm_names) {
-        log("ACM entry: " + entry, LogLevel::DEBUG);
-    }
+    // // print the acm entry names
+    // std::vector<std::string> acm_names;
+    // acm.getAllEntryNames(acm_names);
+    // for (const auto &entry : acm_names) {
+    //     log("ACM entry: " + entry, LogLevel::DEBUG);
+    // }
 
     int index = 0;
     for (int i = 0; i < num_robots_; i++) {
@@ -78,6 +82,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
             all_joints.insert(all_joints.end(), start_poses_[i].joint_values.begin(), start_poses_[i].joint_values.end());
         }
         else {
+            auto links = kinematic_state_->getJointModelGroup(group)->getLinkModelNamesWithCollisionGeometry();
             // copy the joint values for this robot
             all_joints.insert(all_joints.end(), pose.joint_values.begin(), pose.joint_values.end());
         }
@@ -93,7 +98,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     } else {
         planning_scene_->checkCollision(c_req, c_res, robot_state, acm);
     }
-    return !c_res.collision;
+    return c_res.collision;
 }
 
 double MoveitInstance::computeDistance(const RobotPose& a, const RobotPose &b) const {
@@ -135,8 +140,16 @@ bool MoveitInstance::connect(const RobotPose& a, const RobotPose& b) {
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
     c_req.group_name = a.robot_name;
-    c_req.contacts = true;
-    c_req.max_contacts = 100;
+
+    auto acm = planning_scene_->getAllowedCollisionMatrixNonConst();
+    for (int i = 0; i < num_robots_; i++) {
+        if (i != a.robot_id) {
+            auto links = kinematic_state_->getJointModelGroup(robot_names_[i])->getLinkModelNamesWithCollisionGeometry();
+            for (const auto &link : links) {
+                acm.setEntry(link, true);
+            }
+        }
+    }
 
     auto joint_model_group = kinematic_state_->getJointModelGroup(a.robot_name);
     moveit::core::RobotState robot_state_a = planning_scene_->getCurrentStateNonConst();
@@ -150,7 +163,7 @@ bool MoveitInstance::connect(const RobotPose& a, const RobotPose& b) {
         
         robot_state.setJointGroupPositions(a.robot_name, a.joint_values);
         robot_state_a.interpolate(robot_state_b, (double)i / num_steps, robot_state, joint_model_group);
-        planning_scene_->checkCollision(c_req, c_res, robot_state);
+        planning_scene_->checkCollision(c_req, c_res, robot_state, acm);
         if (c_res.collision) {
             return false;
         }

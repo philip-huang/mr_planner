@@ -18,6 +18,7 @@
 #include <tf2_eigen/tf2_eigen.h>
 
 #include <planner.h>
+#include <tpg.h>
 #include <lego/Lego.hpp>
 
 const std::string PLANNING_GROUP = "dual_arms";
@@ -82,7 +83,8 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Goa
 
 class DualArmPlanner {
 public:
-    DualArmPlanner(const std::string &planner_type) : planner_type_(planner_type) {
+    DualArmPlanner(const std::string &planner_type, const std::string &output_dir) : 
+        planner_type_(planner_type), output_dir_(output_dir) {
         robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
         robot_model_ = robot_model_loader.getModel();
         move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(PLANNING_GROUP);
@@ -104,7 +106,7 @@ public:
         get_planning_scene_client = nh_.serviceClient<moveit_msgs::GetPlanningScene>("get_planning_scene");
         get_planning_scene_client.waitForExistence();
 
-        instance_ = std::make_shared<MoveitInstance>(robot_model_, kinematic_state_, move_group_, planning_scene_);
+        instance_ = std::make_shared<MoveitInstance>(kinematic_state_, move_group_, planning_scene_);
         instance_->setNumberOfRobots(2);
         instance_->setRobotNames({"left_arm", "right_arm"});
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
@@ -196,66 +198,19 @@ public:
         }
         // Use the PlanningSceneMonitor to update and get the current planning scene
 
-        success &= pp_planner_->plan();
+        PlannerOptions options;
+        success &= pp_planner_->plan(options);
         if (success) {
             ROS_INFO("Prioritized Planning succeeded");
             std::vector<RobotTrajectory> solution;
             success &= pp_planner_->getPlan(solution);
-            // convert solution to moveit plan and execute
-            moveit::planning_interface::MoveGroupInterface::Plan my_plan;
-            trajectory_msgs::JointTrajectory &joint_traj = my_plan.trajectory_.joint_trajectory;
-            joint_traj.joint_names = move_group_->getJointNames();
 
-            // get the max time
-            double max_time = 0.0;
-            for (size_t i = 0; i < solution.size(); i++) {
-                max_time = std::max(max_time, solution[i].times.back());
-            }
-            double dt = 0.01;
-            int num_points = max_time / dt + 1;
-            joint_traj.points.resize(num_points);
-            for (int i = 0; i < num_points; i++) {
-                joint_traj.points[i].positions.resize(joint_traj.joint_names.size());
-                joint_traj.points[i].velocities.resize(joint_traj.joint_names.size());
-                joint_traj.points[i].accelerations.resize(joint_traj.joint_names.size());
-                joint_traj.points[i].time_from_start = ros::Duration(i * dt);
-            }
+            // compute TPG
+            std::shared_ptr<TPG::TPG> tpg = std::make_shared<TPG::TPG>();
+            success &= tpg->init(instance_, solution);
+            //success &= tpg->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
 
-            // interpolate each trajectory
-            for (int i = 0; i < solution.size(); i++) {
-                int ind = 0;
-                auto traj = solution[i];
-                
-                for (int j = 0; j < num_points; j++) {
-                    double t = j * dt;
-                    while (ind + 1 < traj.times.size() && traj.times[ind + 1] <= t) {
-                        ind++;
-                    }
-                    RobotPose pose_j_t;
-                    if (ind + 1 == traj.times.size()) {
-                        // assuming obstacle stays at the end of the trajectory
-                        pose_j_t = traj.trajectory[ind];
-                    } else {
-                        double alpha = (t - traj.times[ind]) / (traj.times[ind + 1] - traj.times[ind]);
-                        pose_j_t = instance_->interpolate(traj.trajectory[ind], traj.trajectory[ind + 1], alpha);
-                    }
-
-                    for (int d = 0; d < pose_j_t.joint_values.size(); d++) {
-                        joint_traj.points[j].positions[i*7 + d] = pose_j_t.joint_values[d];
-                    }
-                }
-            }
-
-            // compute velocities and accelerations with central difference
-            for (int i = 1; i < num_points - 1; i++) {
-                for (int j = 0; j < joint_traj.joint_names.size(); j++) {
-                    joint_traj.points[i].velocities[j] = (joint_traj.points[i+1].positions[j] - joint_traj.points[i-1].positions[j]) / (2 * dt);
-                    joint_traj.points[i].accelerations[j] = (joint_traj.points[i+1].positions[j] - 2 * joint_traj.points[i].positions[j] + joint_traj.points[i-1].positions[j]) / (dt * dt);
-                }
-            }
-
-            // execute the plan
-            move_group_->execute(my_plan);
+            success &= tpg->moveit_execute(instance_, move_group_);
         }
         return success;
     }
@@ -326,7 +281,9 @@ public:
         // for (size_t i = 0; i < all_joints_given.size(); i++) {
         //     ROS_INFO("Joint %lu: %f", i, all_joints_given[i]);
         // }
-        return planAndMoveJointSpace(poses, all_joints_given);
+        bool success = planAndMoveJointSpace(poses, all_joints_given);
+        counter_++;
+        return success;
 
         // if (true /*poses[1].use_robot*/) {
         //     EigenSTL::vector_Isometry3d poses_eigen;
@@ -685,6 +642,9 @@ private:
     std::shared_ptr<PriorityPlanner> pp_planner_;
 
     std::vector<moveit::planning_interface::MoveGroupInterface::Plan> plans_;
+
+    std::string output_dir_;
+    int counter_ = 0;
 };
 
 
@@ -697,13 +657,14 @@ int main(int argc, char** argv) {
     spinner.start();
 
 
-    std::string file_path, planner_type, config_fname, root_pwd;
+    std::string file_path, planner_type, config_fname, root_pwd, output_dir;
     //retrieve the file path as ros param
     nh.getParam("fullorder_targets_filename", file_path);
     nh.getParam("planner_type", planner_type);
     nh.param<std::string>("config_fname", config_fname, "");
     nh.param<std::string>("root_pwd", root_pwd, "");
-    DualArmPlanner planner(planner_type);
+    nh.param<std::string>("output_dir", output_dir, "");
+    DualArmPlanner planner(planner_type, output_dir);
 
     // wait 2 seconds
     ros::Duration(2).sleep();

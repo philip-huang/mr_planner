@@ -9,6 +9,7 @@ bool SingleAgentPlanner::init(const PlannerOptions &options) {
 
 STRRT::STRRT(std::shared_ptr<PlanInstance> instance, int robot_id)
     : SingleAgentPlanner(instance, robot_id) {
+        vMax_ = instance_->getVMax(robot_id);
     }
 
 bool STRRT::init(const PlannerOptions &options) { 
@@ -27,11 +28,11 @@ bool STRRT::init(const PlannerOptions &options) {
     // find the last time when obstacles pass thru the goal poses
     for (const RobotTrajectory &obs : obstacles_) {
         double last_time = obs.times.back();
-        int num_points = last_time / 0.1 + 1;
+        int num_points = last_time / col_dt_ + 1;
         int ind = 0;
         RobotPose obs_i_pose;
         for (int i = 0; i < num_points; i++) {
-            double t = i * 0.1;
+            double t = i * col_dt_;
             while (ind + 1 < obs.times.size() && obs.times[ind + 1] <= t) {
                 ind++;
             }
@@ -42,9 +43,9 @@ bool STRRT::init(const PlannerOptions &options) {
                 double alpha = (t - obs.times[ind]) / (obs.times[ind + 1] - obs.times[ind]);
                 obs_i_pose = instance_->interpolate(obs.trajectory[ind], obs.trajectory[ind + 1], alpha);
             }
-            if (!instance_->checkCollision({goal_pose_, obs_i_pose}, true)) {
+            if (instance_->checkCollision({goal_pose_, obs_i_pose}, true) == true) {
                 // has collision
-                min_time_ = std::max(min_time_, t + 0.1);
+                min_time_ = std::max(min_time_, t + col_dt_);
             }
         }
     }
@@ -69,6 +70,7 @@ bool STRRT::plan(const PlannerOptions &options) {
         solution_.trajectory.clear();
         solution_.times.push_back(0.0);
         solution_.trajectory.push_back(goal_pose_);
+        solution_.cost = 0.0;
         log("Plan is just the start/goal pose", LogLevel::INFO);
         return true;
     }
@@ -293,7 +295,7 @@ GrowState STRRT::extend(const std::shared_ptr<Vertex> &new_sample, Tree &tree, s
             delta_vertex = new_sample;
         }
         else {
-            log("Trapped on the way to new sample", LogLevel::DEBUG);
+            log("Trapped on the way to new sample (dt < " + std::to_string(max_deltat_) + " )", LogLevel::DEBUG);
             return TRAPPED;
         }
     }
@@ -371,7 +373,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
     double t1 = a->time;
     double t2 = b->time;
     assert (t1 <= t2);
-    int num_steps = (t2 - t1) / 0.1 + 1;
+    int num_steps = (t2 - t1) / col_dt_ + 1;
 
     std::vector<std::vector<RobotPose>> obs_poses;
     // precompute all the obstacle poses for all the obstacle robots
@@ -383,7 +385,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
         int ind = 0;
         // compile this dynamic obstacle's poses at each time step
         for (int s = 0; s < num_steps; s++) {
-            double t = t1 + s * 0.1;
+            double t = t1 + s * col_dt_;
             while (ind + 1 < obs.times.size() && obs.times[ind + 1] <= t) {
                 ind++;
             }
@@ -402,9 +404,8 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
 
     // check for inter-agent collision
     for (int s = 0; s < num_steps; s++) {
-        double t = t1 + s * 0.1;
+        double t = t1 + s * col_dt_;
         double alpha = (t - t1) / (t2 - t1);
-        log("alpha: (own) " + std::to_string(t1) + " " + std::to_string(t2) + " " + std::to_string(t), LogLevel::DEBUG);
         RobotPose a_pose = instance_->interpolate(a->pose, b->pose, alpha);
         std::vector<RobotPose> all_poses;
         all_poses.push_back(a_pose);
@@ -413,7 +414,7 @@ bool STRRT::validateMotion(const std::shared_ptr<Vertex> &a, const std::shared_p
             all_poses.push_back(obs_poses[i][s]);
         }
         
-        if (instance_->checkCollision(all_poses, true) == false) {
+        if (instance_->checkCollision(all_poses, true) == true) {
             return false;
         }
     }
@@ -464,6 +465,7 @@ void STRRT::update_solution(std::shared_ptr<Vertex> &new_sample, bool goalTree) 
         solution_.robot_id = robot_id_;
         solution_.times.clear();
         solution_.trajectory.clear();
+        solution_.cost = best_cost_;
         for (auto &vertex : path) {
             solution_.times.push_back(vertex->time);
             solution_.trajectory.push_back(vertex->pose);

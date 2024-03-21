@@ -3,10 +3,10 @@
 #include "logger.h"
 
 PriorityPlanner::PriorityPlanner(std::shared_ptr<PlanInstance> instance) : AbstractPlanner(instance) {
-    setLogLevel(LogLevel::HLINFO);
+    setLogLevel(LogLevel::INFO);
 }
 
-bool PriorityPlanner::plan() {
+bool PriorityPlanner::plan(const PlannerOptions &options) {
     // Implement the planning algorithm using problem_instance_
 
     // set a randomized order
@@ -26,10 +26,10 @@ bool PriorityPlanner::plan() {
         int robot_id = order[i];
         
         auto planner = std::make_shared<STRRT>(instance_, robot_id);
-        PlannerOptions options;
-        options.obstacles = solution;
+        PlannerOptions option_i = options;
+        option_i.obstacles = solution;
         
-        bool solved = planner->plan(options);
+        bool solved = planner->plan(option_i);
         if (solved) {
             RobotTrajectory traj;
             planner->getPlan(traj);

@@ -5,10 +5,14 @@
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/robot_state/robot_state.h>
 #include <moveit/planning_scene/planning_scene.h>
+#include <actionlib/client/simple_action_client.h>
+#include <moveit_msgs/ExecuteTrajectoryAction.h>
+
 #include <memory>
 #include <vector>
 #include <random>
 #include <Eigen/Geometry>
+#include <chrono>
 
 // Abstract base class for the planning scene interface
 
@@ -31,6 +35,7 @@ public:
     virtual bool connect(const RobotPose& a, const RobotPose& b) = 0;
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result) = 0;
     virtual bool sample(RobotPose &pose) = 0;
+    virtual double getVMax(int robot_id);
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
@@ -69,7 +74,7 @@ protected:
 // Concrete implementation using MoveIt
 class MoveitInstance : public PlanInstance {
 public:
-    MoveitInstance(robot_model::RobotModelPtr robot_model, robot_state::RobotStatePtr kinematic_state,
+    MoveitInstance(robot_state::RobotStatePtr kinematic_state,
                    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
                    planning_scene::PlanningScenePtr planning_scene);
     void updatePlanningScene(planning_scene::PlanningScenePtr planning_scene) {
@@ -85,7 +90,6 @@ public:
 
 private:
     // moveit move_group and planning_scene_interface pointers
-    robot_model::RobotModelPtr robot_model_;
     robot_state::RobotStatePtr kinematic_state_;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
     planning_scene::PlanningScenePtr planning_scene_;

@@ -15,7 +15,7 @@ public:
     }
     
     // Perform the planning process
-    virtual bool plan() = 0;
+    virtual bool plan(const PlannerOptions &options) = 0;
 
     // Retrieve the plan (if needed, depending on your design, this could return a path, a series of actions, etc.)
     // For simplicity, this could return a boolean indicating success for now,
@@ -37,7 +37,7 @@ class PriorityPlanner : public AbstractPlanner {
 public:
     PriorityPlanner(std::shared_ptr<PlanInstance> instance);
 
-    virtual bool plan() override;
+    virtual bool plan(const PlannerOptions &options) override;
 
     virtual bool getPlan(std::vector<RobotTrajectory> &solution) const override;
 

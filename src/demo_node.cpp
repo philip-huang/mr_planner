@@ -4,6 +4,9 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 
+#include "tpg.h"
+#include "planner.h"
+
 // define Statetype as a vector of doubles
 typedef std::vector<double> StateType;
 
@@ -97,6 +100,51 @@ void test_planning(moveit::planning_interface::MoveGroupInterface& move_group) {
     }
 }
 
+void test_pp_planning(std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
+                    planning_scene::PlanningScenePtr &planning_scene,
+                    robot_state::RobotStatePtr  &kinematic_state,
+                    const std::string &pose_name) {
+    auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
+    instance->setNumberOfRobots(2);
+    instance->setRobotNames({"left_arm", "right_arm"});
+
+    std::vector<double> current_joints = move_group->getCurrentJointValues();
+    std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
+    std::vector<std::string> joint_names = move_group->getVariableNames();
+
+    for (int i = 0; i < 2; i++) {
+        std::vector<double> start_pose(7, 0.0);
+        std::vector<double> goal_pose(7, 0.0);
+        for (size_t j = 0; j < 7; j++) {
+            start_pose[j] = current_joints[i*7+j];
+            goal_pose[j] = goal_joints[joint_names[i*7+j]];
+        }
+        instance->setStartPose(i, start_pose);
+        instance->setGoalPose(i, goal_pose);
+    }
+
+    PriorityPlanner planner(instance);
+    PlannerOptions options(1.0, 1000000);
+    bool success = planner.plan(options);
+    if (!success) {
+        ROS_INFO("Failed to plan");
+        return;
+    }
+    
+    std::vector<RobotTrajectory> solution;
+    success &= planner.getPlan(solution);
+
+    TPG::TPG tpg;
+    tpg.init(instance, solution);
+    tpg.saveToDotFile("tpg.dot");
+
+    //success &= tpg.moveit_execute(instance, move_group);
+    TrajectoryClient client("execute_trajectory", true);
+    client.waitForServer();
+    tpg.actionlib_execute(joint_names, client);
+}
+    
+
 int main(int argc, char** argv) {
     ros::init(argc, argv, "plan_node");
     ros::NodeHandle nh;
@@ -105,7 +153,8 @@ int main(int argc, char** argv) {
 
     // Declare the MoveGroupInterface
     std::string movegroup_name = "dual_arms";
-    moveit::planning_interface::MoveGroupInterface move_group(movegroup_name);
+    auto move_group = std::make_shared<moveit::planning_interface::MoveGroupInterface>(movegroup_name);
+
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
     
     // Create the planning scene from robot model
@@ -119,11 +168,22 @@ int main(int argc, char** argv) {
     ros::Duration(0.3).sleep();
     planning_scene::PlanningScenePtr planning_scene = planning_scene_monitor->getPlanningScene();
 
+    robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
+    auto robot_model = robot_model_loader.getModel();
+    auto kinematic_state = std::make_shared<robot_state::RobotState>(robot_model);
+    kinematic_state->setToDefaultValues();
+
     // test_add_lego(planning_scene_interface, move_group);
 
     // test_collision(move_group, planning_scene);
 
-    test_planning(move_group);
+    // test_planning(*move_group);
+
+    test_pp_planning(move_group, planning_scene, kinematic_state, "left_push");
+
+    test_pp_planning(move_group, planning_scene, kinematic_state, "right_push");
+
+    test_pp_planning(move_group, planning_scene, kinematic_state, "ready_pose");
 
     ros::shutdown();
     return 0;

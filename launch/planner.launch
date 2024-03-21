@@ -34,6 +34,7 @@
         <param name="planner_type" value="PrioritizedPlanning"/>
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
+        <param name="output_dir" value="$(find mr_planner)/outputs"/>
     </node>
     
     <!-- Start the collision test node -->
