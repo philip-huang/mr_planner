@@ -45,6 +45,7 @@ namespace TPG {
             std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
         bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const;
         bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
+        void update_joint_states(const std::vector<double> &joint_states, int robot_id);
 
     private:
         int getTotalNodes() const;
@@ -72,7 +73,7 @@ namespace TPG {
         std::vector<int> numNodes_;
         std::vector<RobotTrajectory> solution_;
 
-
+        std::vector<std::vector<double>> joint_states_;
         std::vector<std::unique_ptr<std::atomic_int>> executed_steps_;
         
     };

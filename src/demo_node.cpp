@@ -100,34 +100,190 @@ void test_planning(moveit::planning_interface::MoveGroupInterface& move_group) {
     }
 }
 
+class TestPPPlanning {
+public:
+    TestPPPlanning(ros::NodeHandle &nh,
+                    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
+                    planning_scene::PlanningScenePtr &planning_scene,
+                    robot_state::RobotStatePtr  &kinematic_state,
+                    const std::vector<std::string> &group_names,
+                    bool async,
+                    bool mfi) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
+                kinematic_state(kinematic_state), group_names(group_names), async(async), mfi(mfi) { }
+
+    void test(const std::string &pose_name) {
+        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
+        instance->setNumberOfRobots(2);
+        instance->setRobotNames({"left_arm", "right_arm"});
+
+        /*
+        Set joint name and record start locations
+        */
+        std::vector<std::string> joint_names = move_group->getVariableNames();
+        std::vector<std::vector<std::string>> joint_names_split;
+
+        if (mfi) {
+            std::vector<std::string> names;
+            names.push_back("joint_1_s");
+            names.push_back("joint_2_l");
+            names.push_back("joint_3_u");
+            names.push_back("joint_4_r");
+            names.push_back("joint_5_b");
+            names.push_back("joint_6_t");
+            joint_names_split.push_back(names);
+            joint_names_split.push_back(names);
+            current_joints.resize(14, 0.0);
+           
+            left_arm_sub = nh.subscribe(group_names[0] + "/joint_states", 1, &TestPPPlanning::left_arm_joint_state_cb, this);
+            right_arm_sub = nh.subscribe(group_names[1] + "/joint_states", 1, &TestPPPlanning::right_arm_joint_state_cb, this);
+
+            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+                ros::Duration(0.1).sleep();
+            }
+        }
+        else {
+            current_joints = move_group->getCurrentJointValues();
+            for (int i = 0; i < 2; i++) {
+                std::vector<std::string> name_i;
+                for (size_t j = 0; j < 7; j++) {
+                    name_i.push_back(joint_names[i*7+j]);
+                }
+                joint_names_split.push_back(name_i);
+            }
+        }
+
+        /*
+        Set the start and goal poses for planner instance
+        */
+        std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
+        for (int i = 0; i < 2; i++) {
+            std::vector<double> start_pose(7, 0.0);
+            std::vector<double> goal_pose(7, 0.0);
+            for (size_t j = 0; j < 7; j++) {
+                start_pose[j] = current_joints[i*7+j];
+                goal_pose[j] = goal_joints[joint_names[i*7+j]];
+            }
+            instance->setStartPose(i, start_pose);
+            instance->setGoalPose(i, goal_pose);
+        }
+
+        /*
+        Call the planner
+        */
+        PriorityPlanner planner(instance);
+        PlannerOptions options(1.0, 1000000);
+        bool success = planner.plan(options);
+        if (!success) {
+            ROS_INFO("Failed to plan");
+            return;
+        }
+        
+        std::vector<RobotTrajectory> solution;
+        success &= planner.getPlan(solution);
+
+        /*
+        Build the TPG
+        */
+        tpg.init(instance, solution, true);
+        tpg.saveToDotFile("tpg.dot");
+
+        /*
+        * Execute the plan
+        */
+        if (async) {
+            std::vector<ros::ServiceClient> clients;
+            for (auto group_name: group_names) {
+                clients.push_back(nh.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
+            }
+            
+            tpg.moveit_mt_execute(joint_names_split, clients);
+        } else {
+            tpg.moveit_execute(instance, move_group);
+        }
+    
+    }
+
+    void left_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 6; i++) {
+            current_joints[i] = msg->position[i];
+        }
+        tpg.update_joint_states(current_joints, 0);
+        left_arm_joint_state_received = true;
+    }
+
+    void right_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 6; i++) {
+            current_joints[7+i] = msg->position[i];
+        }
+        tpg.update_joint_states(current_joints, 1);
+        right_arm_joint_state_received = true;
+    }
+
+private:
+    ros::NodeHandle nh;
+    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group;
+    planning_scene::PlanningScenePtr planning_scene;
+    robot_state::RobotStatePtr kinematic_state;
+    std::string pose_name;
+    std::vector<std::string> group_names;
+    bool async;
+    bool mfi;
+
+    TPG::TPG tpg;
+    bool left_arm_joint_state_received = false;
+    bool right_arm_joint_state_received = false;
+    std::vector<double> current_joints;
+    ros::Subscriber left_arm_sub, right_arm_sub;
+};
+
 void test_pp_planning(ros::NodeHandle &nh,
                     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
                     planning_scene::PlanningScenePtr &planning_scene,
                     robot_state::RobotStatePtr  &kinematic_state,
                     const std::string &pose_name,
-                    const std::vector<std::string> &service_names,
-                    bool async) {
+                    const std::vector<std::string> &group_names,
+                    bool async,
+                    bool mfi) {
     auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
     instance->setNumberOfRobots(2);
     instance->setRobotNames({"left_arm", "right_arm"});
 
-    std::vector<double> current_joints = move_group->getCurrentJointValues();
-    std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
     std::vector<std::string> joint_names = move_group->getVariableNames();
     std::vector<std::vector<std::string>> joint_names_split;
+    std::vector<double> current_joints = move_group->getCurrentJointValues();
+    std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
+
+    if (mfi) {
+        std::vector<std::string> names;
+        names.push_back("joint_1_s");
+        names.push_back("joint_2_l");
+        names.push_back("joint_3_u");
+        names.push_back("joint_4_r");
+        names.push_back("joint_5_b");
+        names.push_back("joint_6_t");
+        joint_names_split.push_back(names);
+        joint_names_split.push_back(names);
+    }
+    else {
+        for (int i = 0; i < 2; i++) {
+            std::vector<std::string> name_i;
+            for (size_t j = 0; j < 7; j++) {
+                name_i.push_back(joint_names[i*7+j]);
+            }
+            joint_names_split.push_back(name_i);
+        }
+    }
+
 
     for (int i = 0; i < 2; i++) {
         std::vector<double> start_pose(7, 0.0);
         std::vector<double> goal_pose(7, 0.0);
-        std::vector<std::string> name_i;
         for (size_t j = 0; j < 7; j++) {
             start_pose[j] = current_joints[i*7+j];
             goal_pose[j] = goal_joints[joint_names[i*7+j]];
-            name_i.push_back(joint_names[i*7+j]);
         }
         instance->setStartPose(i, start_pose);
         instance->setGoalPose(i, goal_pose);
-        joint_names_split.push_back(name_i);
     }
 
     PriorityPlanner planner(instance);
@@ -148,8 +304,8 @@ void test_pp_planning(ros::NodeHandle &nh,
     //success &= tpg.moveit_execute(instance, move_group);
     if (async) {
         std::vector<ros::ServiceClient> clients;
-        for (auto service_name: service_names) {
-            clients.push_back(nh.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(service_name));
+        for (auto group_name: group_names) {
+            clients.push_back(nh.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
         }
         
         tpg.moveit_mt_execute(joint_names_split, clients);
@@ -163,6 +319,7 @@ void test_pp_planning(ros::NodeHandle &nh,
 int main(int argc, char** argv) {
     ros::init(argc, argv, "plan_node");
     ros::NodeHandle nh;
+    ros::NodeHandle nh_private("~");
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
@@ -194,18 +351,26 @@ int main(int argc, char** argv) {
 
     // test_planning(*move_group);
 
-    std::vector<std::string> service_names = {"left_arm/yk_execute_trajectory", "right_arm/yk_execute_trajectory"};
+    std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
-        if (nh.hasParam("service_name_" + std::to_string(i))) {
-            nh.getParam("service_name_" + std::to_string(i), service_names[i]);
+        if (nh_private.hasParam("group_name_" + std::to_string(i))) {
+            nh_private.getParam("group_name_" + std::to_string(i), group_names[i]);
        }
     }
 
-    test_pp_planning(nh, move_group, planning_scene, kinematic_state, "left_push_up", service_names, true);
+    bool async = true;
+    bool mfi = true;
+    if (nh_private.hasParam("mfi")) {
+        nh_private.getParam("mfi", mfi);
+    }
 
+    auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, async, mfi);
+    pp_tester.test("left_push_up");
+    pp_tester.test("ready_pose");
+
+    //test_pp_planning(nh, move_group, planning_scene, kinematic_state, "left_push_up", group_names, async, mfi);
     //test_pp_planning(move_group, planning_scene, kinematic_state, "right_push");
-
-    test_pp_planning(nh, move_group, planning_scene, kinematic_state, "ready_pose", service_names, true);
+    //test_pp_planning(nh, move_group, planning_scene, kinematic_state, "ready_pose", group_names, async, mfi);
 
     ros::shutdown();
     return 0;

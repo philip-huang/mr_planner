@@ -11,19 +11,12 @@
         <arg name="use_rviz" value="$(arg use_rviz)" />
     </include>
 
-    <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">
-        <param name="group_name" value="left_arm" />
-    </node>
-
-    <node name="right_arm" pkg="mr_planner" type="yk_robot" output="screen">
-        <param name="group_name" value="right_arm" />
-    </node>
-
     <!-- Start the demo test node -->
     <node name="test_collision" pkg="mr_planner" type="demo" output="screen">
-        <param name="group_name_0" value="/left_arm" />
-        <param name="group_name_1" value="/right_arm" />
-        <param name="mfi" value="false" />
+        <param name="group_name_0" value="/sim1" />
+        <param name="group_name_1" value="/yk_destroyer" />
+        <param name="mfi" value="true" />
     </node>
+    
 
 </launch>

@@ -684,10 +684,6 @@ bool TPG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_n
 void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id) {
     std::shared_ptr<Node> node_i = start_nodes_[robot_id];
     
-    moveit_msgs::ExecuteKnownTrajectory srv;
-    srv.request.wait_for_execution = true;
-    auto &joint_traj = srv.request.trajectory.joint_trajectory;
-    joint_traj.joint_names = joint_names;
 
     while (ros::ok()) {
         
@@ -709,6 +705,13 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
         }
         
         int j = 0;
+
+        moveit_msgs::ExecuteKnownTrajectory srv;
+        srv.request.wait_for_execution = true;
+        
+        auto &joint_traj = srv.request.trajectory.joint_trajectory;
+        joint_traj.joint_names = joint_names;
+
         joint_traj.points.clear();
         do {
             trajectory_msgs::JointTrajectoryPoint point;
@@ -747,18 +750,66 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             }
         }
 
-        // execute the plan now
-        bool result = clients.call(srv);
-        if (!result) {
-            log("Failed to call service for robot " + std::to_string(robot_id), LogLevel::ERROR);
-            return;
+        // compute th error of the current joint state vs the start state
+        double error = 0;
+        for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+            error += std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
         }
-        else {
-            executed_steps_[robot_id]->fetch_add(j); // allow following conflict
+        log("Robot " + std::to_string(robot_id) + " start/current L1 error: " + std::to_string(error), LogLevel::INFO);
+
+        // execute the plan now
+        bool retry = true;
+        while (retry) {
+            retry = false;
+            bool result = clients.call(srv);
+            if (!result) {
+                log("Failed to call service for robot " + std::to_string(robot_id), LogLevel::ERROR);
+                return;
+            }
+            else {
+                int error_code = srv.response.error_code.val;
+                log("Robot " + std::to_string(robot_id) + " traj execute service, code " + std::to_string(error_code), LogLevel::INFO);
+                if (error_code < 0) {
+                    executed_steps_[robot_id]->fetch_add(j);
+                    if (error_code == moveit_msgs::MoveItErrorCodes::TIMED_OUT) {
+                        log("Timeout, retrying...", LogLevel::INFO);
+                        retry = true;
+                        ros::Duration(0.01).sleep();
+                    }
+                    else {
+                        return;
+                    }
+                }
+                else {
+                    log("Success, moving to the next segment", LogLevel::INFO);
+                    executed_steps_[robot_id]->fetch_add(j); // allow following conflict
+
+                    // compute the end pose vs current pose error
+                    double error = 0;
+                    for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+                        error += std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size()-1].positions[d]);
+                    }
+                    log("Robot " + std::to_string(robot_id) + " end/current L1 error: " + std::to_string(error), LogLevel::INFO);
+                }
+            }
         }
     }
 }
 
+void TPG::update_joint_states(const std::vector<double> &joint_states, int robot_id)
+{
+    while (joint_states_.size() <= robot_id) {
+        joint_states_.push_back(std::vector<double>());
+    }
+    for (int i = 0; i < joint_states.size(); i++) {
+        if (joint_states_[robot_id].size() <= i) {
+            joint_states_[robot_id].push_back(joint_states[i]);
+        } else {
+            joint_states_[robot_id][i] = joint_states[i];
+        }
+    }
+
+}
 
 
 }
