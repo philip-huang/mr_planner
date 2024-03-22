@@ -142,13 +142,17 @@ public:
             }
         }
         else {
-            current_joints = move_group->getCurrentJointValues();
+            current_joints.resize(14, 0.0);
             for (int i = 0; i < 2; i++) {
                 std::vector<std::string> name_i;
                 for (size_t j = 0; j < 7; j++) {
                     name_i.push_back(joint_names[i*7+j]);
                 }
                 joint_names_split.push_back(name_i);
+            }
+            dual_arm_sub = nh.subscribe("/joint_states", 1, &TestPPPlanning::dual_arm_joint_state_cb, this);
+            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+                ros::Duration(0.1).sleep();
             }
         }
 
@@ -207,7 +211,7 @@ public:
         for (size_t i = 0; i < 6; i++) {
             current_joints[i] = msg->position[i];
         }
-        tpg.update_joint_states(current_joints, 0);
+        tpg.update_joint_states(msg->position, 0);
         left_arm_joint_state_received = true;
     }
 
@@ -215,7 +219,20 @@ public:
         for (size_t i = 0; i < 6; i++) {
             current_joints[7+i] = msg->position[i];
         }
-        tpg.update_joint_states(current_joints, 1);
+        tpg.update_joint_states(msg->position, 1);
+        right_arm_joint_state_received = true;
+    }
+
+    void dual_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 7; i++) {
+            current_joints[i] = msg->position[i];
+            current_joints[7+i] = msg->position[7+i];
+        }
+        std::vector<double> left_joints(msg->position.begin(), msg->position.begin()+7);
+        std::vector<double> right_joints(msg->position.begin()+7, msg->position.begin()+14);
+        tpg.update_joint_states(left_joints, 0);
+        tpg.update_joint_states(right_joints, 1);
+        left_arm_joint_state_received = true;
         right_arm_joint_state_received = true;
     }
 
@@ -233,7 +250,7 @@ private:
     bool left_arm_joint_state_received = false;
     bool right_arm_joint_state_received = false;
     std::vector<double> current_joints;
-    ros::Subscriber left_arm_sub, right_arm_sub;
+    ros::Subscriber left_arm_sub, right_arm_sub, dual_arm_sub;
 };
 
 void test_pp_planning(ros::NodeHandle &nh,

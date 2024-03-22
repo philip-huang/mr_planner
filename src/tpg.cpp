@@ -752,10 +752,12 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
 
         // compute th error of the current joint state vs the start state
         double error = 0;
-        for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-            error += std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
+        if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
+            for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+                error += std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
+            }
+            log("Robot " + std::to_string(robot_id) + " start/current L1 error: " + std::to_string(error), LogLevel::INFO);
         }
-        log("Robot " + std::to_string(robot_id) + " start/current L1 error: " + std::to_string(error), LogLevel::INFO);
 
         // execute the plan now
         bool retry = true;
@@ -785,11 +787,13 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
                     executed_steps_[robot_id]->fetch_add(j); // allow following conflict
 
                     // compute the end pose vs current pose error
-                    double error = 0;
-                    for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                        error += std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size()-1].positions[d]);
+                    if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
+                        double error = 0;
+                        for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+                            error += std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size()-1].positions[d]);
+                        }
+                        log("Robot " + std::to_string(robot_id) + " end/current L1 error: " + std::to_string(error), LogLevel::INFO);
                     }
-                    log("Robot " + std::to_string(robot_id) + " end/current L1 error: " + std::to_string(error), LogLevel::INFO);
                 }
             }
         }
