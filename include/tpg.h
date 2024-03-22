@@ -39,6 +39,7 @@ namespace TPG {
     class TPG {
     public:
         TPG() = default;
+        void reset();
         bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, bool shortcut);
         bool saveToDotFile(const std::string &filename) const;
         bool moveit_execute(std::shared_ptr<PlanInstance> instance, 

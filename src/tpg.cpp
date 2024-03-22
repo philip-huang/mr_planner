@@ -3,6 +3,19 @@
 
 namespace TPG {
 
+void TPG::reset() {
+    start_nodes_.clear();
+    end_nodes_.clear();
+    numNodes_.clear();
+    collisionCheckMatrix_.clear();
+    type2Edges_.clear();
+    solution_.clear();
+    idType2Edges_ = 0;
+    num_robots_ = 0;
+    joint_states_.clear();
+    executed_steps_.clear();
+}
+
 bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
     bool shortcut) {
     num_robots_ = instance->getNumberOfRobots();
@@ -753,10 +766,16 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
         // compute th error of the current joint state vs the start state
         double error = 0;
         if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
+            std::cout << "Robot " << robot_id << " start/current errors ";
+
             for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                error += std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
+                double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
+                error += error_d;
+                std::cout << error_d << " ";
             }
-            log("Robot " + std::to_string(robot_id) + " start/current L1 error: " + std::to_string(error), LogLevel::INFO);
+            for (int d = 0; d < joint_traj.points[0].positions.size(); d++) {
+                joint_traj.points[0].positions[d] = joint_states_[robot_id][d];
+            }
         }
 
         // execute the plan now
@@ -789,10 +808,12 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
                     // compute the end pose vs current pose error
                     if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
                         double error = 0;
+                        std::cout << "Robot " << robot_id << " end/current errors ";
                         for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                            error += std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size()-1].positions[d]);
+                            double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size() - 1].positions[d]);
+                            error += error_d;
+                            std::cout << error_d << " ";
                         }
-                        log("Robot " + std::to_string(robot_id) + " end/current L1 error: " + std::to_string(error), LogLevel::INFO);
                     }
                 }
             }

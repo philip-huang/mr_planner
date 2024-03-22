@@ -121,6 +121,8 @@ public:
         */
         std::vector<std::string> joint_names = move_group->getVariableNames();
         std::vector<std::vector<std::string>> joint_names_split;
+        left_arm_joint_state_received = false;
+        right_arm_joint_state_received = false;
 
         if (mfi) {
             std::vector<std::string> names;
@@ -165,6 +167,7 @@ public:
             std::vector<double> goal_pose(7, 0.0);
             for (size_t j = 0; j < 7; j++) {
                 start_pose[j] = current_joints[i*7+j];
+                std::cout << "Start pose " << i << " " << j << ": " << start_pose[j] << std::endl;
                 goal_pose[j] = goal_joints[joint_names[i*7+j]];
             }
             instance->setStartPose(i, start_pose);
@@ -188,6 +191,7 @@ public:
         /*
         Build the TPG
         */
+        tpg.reset();
         tpg.init(instance, solution, true);
         tpg.saveToDotFile("tpg.dot");
 
