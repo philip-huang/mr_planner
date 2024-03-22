@@ -7,12 +7,15 @@
 #include <moveit/planning_scene/planning_scene.h>
 #include <actionlib/client/simple_action_client.h>
 #include <moveit_msgs/ExecuteTrajectoryAction.h>
+#include <moveit_msgs/ExecuteKnownTrajectory.h>
 
 #include <memory>
 #include <vector>
 #include <random>
 #include <Eigen/Geometry>
 #include <chrono>
+#include <atomic>
+#include <thread>
 
 // Abstract base class for the planning scene interface
 

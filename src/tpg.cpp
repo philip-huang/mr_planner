@@ -3,7 +3,8 @@
 
 namespace TPG {
 
-bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution) {
+bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
+    bool shortcut) {
     num_robots_ = instance->getNumberOfRobots();
     solution_ = solution;
 
@@ -118,17 +119,18 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
 
     t_start = std::chrono::high_resolution_clock::now();
 
-    // findShortcuts(instance);
+    if (shortcut) {
+        findShortcuts(instance);
 
-    // double t_shortcut = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
-    // numtype2edges = getTotalType2Edges();
-    // log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
-    // log ("in " + std::to_string(t_shortcut) + " ms.", LogLevel::HLINFO);
-    
-    // transitiveReduction();
-    // numtype2edges = getTotalType2Edges();
-    // log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
-
+        double t_shortcut = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+        numtype2edges = getTotalType2Edges();
+        log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
+        log ("in " + std::to_string(t_shortcut) + " ms.", LogLevel::HLINFO);
+        
+        transitiveReduction();
+        numtype2edges = getTotalType2Edges();
+        log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
+    }
 
     // 5. Print the TPG for debugging purposes
     for (int i = 0; i < num_robots_; i++) {
@@ -658,6 +660,105 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
     }
 
 }
+
+bool TPG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients) {
+    // create one thread for each robot
+    std::vector<std::thread> threads;
+
+    for (int i = 0; i < num_robots_; i++) {
+        executed_steps_.push_back(std::make_unique<std::atomic<int>>(0));
+    }
+
+    for (int i = 0; i < num_robots_; i++) {
+        threads.emplace_back(&TPG::moveit_async_execute_thread, this, std::ref(joint_names[i]), std::ref(clients[i]), i);
+    }
+
+    log("Waiting for all threads to finish...", LogLevel::HLINFO);
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    return true;
+}
+
+void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id) {
+    std::shared_ptr<Node> node_i = start_nodes_[robot_id];
+    
+    moveit_msgs::ExecuteKnownTrajectory srv;
+    srv.request.wait_for_execution = true;
+    auto &joint_traj = srv.request.trajectory.joint_trajectory;
+    joint_traj.joint_names = joint_names;
+
+    while (ros::ok()) {
+        
+        if (node_i->Type1Next == nullptr) {
+            log("Robot " + std::to_string(robot_id) + " reached the end at step " + std::to_string(node_i->timeStep), LogLevel::HLINFO);
+            return;
+        }
+
+        // check if we can execute the current node
+        bool safe = true;
+        for (auto edge : node_i->Type1Next->Type2Prev) {
+            if (executed_steps_[edge.nodeFrom->robotId]->load() < edge.nodeFrom->timeStep) {
+                safe = false;
+            }
+        }
+        if (!safe) {
+            ros::Duration(0.03).sleep();
+            continue;
+        }
+        
+        int j = 0;
+        joint_traj.points.clear();
+        do {
+            trajectory_msgs::JointTrajectoryPoint point;
+            point.time_from_start = ros::Duration(j * dt_);
+            point.positions.resize(joint_names.size());
+            point.velocities.resize(joint_names.size());
+            point.accelerations.resize(joint_names.size());
+
+            std::cout << "Robot " << robot_id << " at time " << node_i->timeStep << ": ";
+            for (int d = 0; d < node_i->pose.joint_values.size(); d++) {
+                point.positions[d] = node_i->pose.joint_values[d];
+                std::cout << point.positions[d] << " ";
+            }
+            std::cout << std::endl;
+            joint_traj.points.push_back(point);
+
+            j++;
+            node_i = node_i->Type1Next;
+            
+        } while ((node_i->Type1Next != nullptr) && (node_i->Type2Prev.size() == 0) && (node_i->Type2Next.size() == 0));
+        trajectory_msgs::JointTrajectoryPoint point;
+        point.time_from_start = ros::Duration(j * dt_);
+        point.positions.resize(joint_names.size());
+        point.velocities.resize(joint_names.size());
+        point.accelerations.resize(joint_names.size());
+        for (int d = 0; d < node_i->pose.joint_values.size(); d++) {
+            point.positions[d] = node_i->pose.joint_values[d];
+        }
+        joint_traj.points.push_back(point);
+
+        // compute velocities and accelerations with central difference
+        for (int i = 1; i < joint_traj.points.size() - 1; i++) {
+            for (int j = 0; j < joint_names.size(); j++) {
+                joint_traj.points[i].velocities[j] = (joint_traj.points[i+1].positions[j] - joint_traj.points[i-1].positions[j]) / (2 * dt_);
+                joint_traj.points[i].accelerations[j] = (joint_traj.points[i+1].positions[j] - 2 * joint_traj.points[i].positions[j] + joint_traj.points[i-1].positions[j]) / (dt_ * dt_);
+            }
+        }
+
+        // execute the plan now
+        bool result = clients.call(srv);
+        if (!result) {
+            log("Failed to call service for robot " + std::to_string(robot_id), LogLevel::ERROR);
+            return;
+        }
+        else {
+            executed_steps_[robot_id]->fetch_add(j); // allow following conflict
+        }
+    }
+}
+
 
 
 }

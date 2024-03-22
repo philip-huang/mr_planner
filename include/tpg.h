@@ -39,11 +39,12 @@ namespace TPG {
     class TPG {
     public:
         TPG() = default;
-        bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution);
+        bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, bool shortcut);
         bool saveToDotFile(const std::string &filename) const;
         bool moveit_execute(std::shared_ptr<PlanInstance> instance, 
             std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
         bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const;
+        bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
 
     private:
         int getTotalNodes() const;
@@ -59,8 +60,9 @@ namespace TPG {
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
         bool bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const;
         void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) const;
-        
-        double dt_ = 0.01;
+        void moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id);
+
+        double dt_ = 0.1;
         std::vector<std::vector<Eigen::MatrixXi>>  collisionCheckMatrix_; // 1 if no collision, 0 if collision
         int num_robots_;
         int idType2Edges_ = 0;
@@ -69,6 +71,9 @@ namespace TPG {
         std::vector<std::shared_ptr<Node>> end_nodes_;
         std::vector<int> numNodes_;
         std::vector<RobotTrajectory> solution_;
+
+
+        std::vector<std::unique_ptr<std::atomic_int>> executed_steps_;
         
     };
 }

@@ -103,17 +103,33 @@ install(TARGETS mr_planner_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
-add_executable(test_collision
+add_executable(demo
   src/demo_node.cpp
 )
 
 
-target_link_libraries(test_collision
+target_link_libraries(demo
   ${PROJECT_NAME}
   ${catkin_LIBRARIES}
 )
 
-install(TARGETS test_collision
+install(TARGETS demo
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
+add_executable(yk_robot
+  src/yk_interface.cpp
+)
+
+target_include_directories(yk_robot PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  PRIVATE src)
+
+target_link_libraries(yk_robot
+  ${catkin_LIBRARIES}
+)
+
+install(TARGETS yk_robot
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

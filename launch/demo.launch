@@ -11,8 +11,15 @@
         <arg name="use_rviz" value="$(arg use_rviz)" />
     </include>
 
-   
+    <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">
+        <param name="group_name" value="left_arm" />
+    </node>
+
+    <node name="right_arm" pkg="mr_planner" type="yk_robot" output="screen">
+        <param name="group_name" value="right_arm" />
+    </node>
+
     <!-- Start the demo test node -->
-    <node name="test_collision" pkg="mr_planner" type="test_collision" output="screen"/>
+    <node name="test_collision" pkg="mr_planner" type="demo" output="screen"/>
 
 </launch>
