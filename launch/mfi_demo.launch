@@ -16,6 +16,8 @@
         <param name="group_name_0" value="/yk_destroyer" />
         <param name="group_name_1" value="/sim1" />
         <param name="mfi" value="true" />
+        <param name="pose_name" value="left_push_up" />
+        <param name="pose_name1" value="ready_pose" />
     </node>
     
 

@@ -7,6 +7,13 @@
 typedef actionlib::SimpleActionClient<moveit_msgs::ExecuteTrajectoryAction> TrajectoryClient;
 
 namespace TPG {
+    struct TPGConfig {
+        bool shortcut = true;
+        bool random_shortcut = true;
+        double random_shortcut_time = 1.0;
+        double dt = 0.1;
+    };
+    
     struct type2Edge;
     struct Node
     {
@@ -40,7 +47,7 @@ namespace TPG {
     public:
         TPG() = default;
         void reset();
-        bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, bool shortcut);
+        bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
         bool saveToDotFile(const std::string &filename) const;
         bool moveit_execute(std::shared_ptr<PlanInstance> instance, 
             std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
@@ -55,6 +62,7 @@ namespace TPG {
         void updateCollisionCheckMatrix(int robot_i, int robot_j, const Eigen::MatrixXi &col_matrix);
         void transitiveReduction();
         void findShortcuts(std::shared_ptr<PlanInstance> instance);
+        void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         bool checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 

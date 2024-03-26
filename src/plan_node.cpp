@@ -207,7 +207,8 @@ public:
 
             // compute TPG
             std::shared_ptr<TPG::TPG> tpg = std::make_shared<TPG::TPG>();
-            success &= tpg->init(instance_, solution, true);
+            TPG::TPGConfig tpg_config;
+            success &= tpg->init(instance_, solution, tpg_config);
             //success &= tpg->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
 
             success &= tpg->moveit_execute(instance_, move_group_);

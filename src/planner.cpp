@@ -27,6 +27,7 @@ bool PriorityPlanner::plan(const PlannerOptions &options) {
         
         auto planner = std::make_shared<STRRT>(instance_, robot_id);
         PlannerOptions option_i = options;
+        option_i.max_planning_time = options.max_planning_time / num_robots_;
         option_i.obstacles = solution;
         
         bool solved = planner->plan(option_i);

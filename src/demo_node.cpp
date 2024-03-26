@@ -79,15 +79,46 @@ void test_collision(moveit::planning_interface::MoveGroupInterface& move_group,
     ROS_INFO_NAMED("plan_node", "State (isValid): %s", isValid ? "VALID" : "INVALID");
 }
 
-void test_planning(moveit::planning_interface::MoveGroupInterface& move_group) {
+void test_planning(moveit::planning_interface::MoveGroupInterface& move_group,
+                    const std::string &pose_name) {
     // Set the planner target
-    move_group.setNamedTarget("left_push");
+    move_group.setNamedTarget(pose_name);
 
     // Declare the Plan object
     moveit::planning_interface::MoveGroupInterface::Plan plan;
 
+    // use AIT* for 1 second
+    move_group.setPlannerId("AITstar");
+    move_group.setPlanningTime(2.0);
+
     // Plan the motion
     bool success = (move_group.plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+
+    double r1_time = -1, r2_time = -1;
+    std::vector<double> goal_poses;
+    for (int i = 0; i < 14; i++) {
+        goal_poses.push_back(plan.trajectory_.joint_trajectory.points.back().positions[i]);
+    }
+    for (int t = plan.trajectory_.joint_trajectory.points.size() - 1; t > -1; t--) {
+        bool robot1_reached = true;
+        bool robot2_reached = true;
+        for (int i = 0; i < 7; i++) {
+            if (fabs(plan.trajectory_.joint_trajectory.points[t].positions[i] - goal_poses[i]) > 0.001) {
+                robot1_reached = false;
+            }
+            if (fabs(plan.trajectory_.joint_trajectory.points[t].positions[i+7] - goal_poses[i+7]) > 0.001) {
+                robot2_reached = false;
+            }
+        }
+        if (!robot1_reached && r1_time < 0) {
+            r1_time = plan.trajectory_.joint_trajectory.points[t].time_from_start.toSec();
+        }
+        if (!robot2_reached && r2_time < 0) {
+            r2_time = plan.trajectory_.joint_trajectory.points[t].time_from_start.toSec();
+        }
+    }
+    double flowtime = r1_time + r2_time;
+    ROS_INFO_NAMED("plan_node", "Flowtime: %f", flowtime);
 
     // Print the result
     ROS_INFO_NAMED("plan_node", "Plan (success): %s", success ? "SUCCESS" : "FAILED");
@@ -107,11 +138,14 @@ public:
                     planning_scene::PlanningScenePtr &planning_scene,
                     robot_state::RobotStatePtr  &kinematic_state,
                     const std::vector<std::string> &group_names,
+                    const std::string &planner_name,
+                    double planning_time_limit,
                     bool async,
                     bool mfi) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
-                kinematic_state(kinematic_state), group_names(group_names), async(async), mfi(mfi) { }
+                kinematic_state(kinematic_state), group_names(group_names), async(async),
+                planning_time_limit(planning_time_limit), mfi(mfi), planner_name(planner_name) { }
 
-    void test(const std::string &pose_name) {
+    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
         auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
         instance->setNumberOfRobots(2);
         instance->setRobotNames({"left_arm", "right_arm"});
@@ -167,7 +201,6 @@ public:
             std::vector<double> goal_pose(7, 0.0);
             for (size_t j = 0; j < 7; j++) {
                 start_pose[j] = current_joints[i*7+j];
-                std::cout << "Start pose " << i << " " << j << ": " << start_pose[j] << std::endl;
                 goal_pose[j] = goal_joints[joint_names[i*7+j]];
             }
             instance->setStartPose(i, start_pose);
@@ -177,22 +210,56 @@ public:
         /*
         Call the planner
         */
-        PriorityPlanner planner(instance);
-        PlannerOptions options(1.0, 1000000);
-        bool success = planner.plan(options);
-        if (!success) {
-            ROS_INFO("Failed to plan");
-            return;
-        }
-        
         std::vector<RobotTrajectory> solution;
-        success &= planner.getPlan(solution);
+        if (planner_name == "PrioritizedPlanning") {
+            PriorityPlanner planner(instance);
+            PlannerOptions options(planning_time_limit, 1000000);
+            bool success = planner.plan(options);
+            if (!success) {
+                ROS_INFO("Failed to plan");
+                return;
+            }
+            
+            success &= planner.getPlan(solution);
+        }
+        else {
+            move_group->setNamedTarget(pose_name);
+            move_group->setPlannerId(planner_name);
+            move_group->setPlanningTime(planning_time_limit);
+            moveit::planning_interface::MoveGroupInterface::Plan plan;
+            bool success = (move_group->plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
+            if (!success) {
+                ROS_INFO("Failed to plan");
+                return;
+            }
+            solution.resize(2);
+            solution[0].robot_id = 0;
+            solution[1].robot_id = 1;
+            std::cout << "Plan size: " << plan.trajectory_.joint_trajectory.points.size() << std::endl;
+            for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
+                RobotPose pose1 = instance->initRobotPose(0);
+                RobotPose pose2 = instance->initRobotPose(1);
+
+                for (int j = 0; j < 7; j++) {
+                    pose1.joint_values[j] = plan.trajectory_.joint_trajectory.points[i].positions[j];
+                    pose2.joint_values[j] = plan.trajectory_.joint_trajectory.points[i].positions[j+7];
+                }
+                solution[0].trajectory.push_back(pose1);
+                solution[1].trajectory.push_back(pose2);
+                solution[0].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
+                solution[1].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
+            }
+
+            solution[0].cost = solution[0].times.back();
+            solution[1].cost = solution[1].times.back();
+            
+        }
 
         /*
         Build the TPG
         */
         tpg.reset();
-        tpg.init(instance, solution, true);
+        tpg.init(instance, solution, tpg_config);
         tpg.saveToDotFile("tpg.dot");
 
         /*
@@ -246,9 +313,12 @@ private:
     planning_scene::PlanningScenePtr planning_scene;
     robot_state::RobotStatePtr kinematic_state;
     std::string pose_name;
+    std::string planner_name;
     std::vector<std::string> group_names;
     bool async;
     bool mfi;
+    double planning_time_limit = 2.0;
+    double tpg_time_limit = 2.0;
 
     TPG::TPG tpg;
     bool left_arm_joint_state_received = false;
@@ -256,85 +326,6 @@ private:
     std::vector<double> current_joints;
     ros::Subscriber left_arm_sub, right_arm_sub, dual_arm_sub;
 };
-
-void test_pp_planning(ros::NodeHandle &nh,
-                    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
-                    planning_scene::PlanningScenePtr &planning_scene,
-                    robot_state::RobotStatePtr  &kinematic_state,
-                    const std::string &pose_name,
-                    const std::vector<std::string> &group_names,
-                    bool async,
-                    bool mfi) {
-    auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
-    instance->setNumberOfRobots(2);
-    instance->setRobotNames({"left_arm", "right_arm"});
-
-    std::vector<std::string> joint_names = move_group->getVariableNames();
-    std::vector<std::vector<std::string>> joint_names_split;
-    std::vector<double> current_joints = move_group->getCurrentJointValues();
-    std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
-
-    if (mfi) {
-        std::vector<std::string> names;
-        names.push_back("joint_1_s");
-        names.push_back("joint_2_l");
-        names.push_back("joint_3_u");
-        names.push_back("joint_4_r");
-        names.push_back("joint_5_b");
-        names.push_back("joint_6_t");
-        joint_names_split.push_back(names);
-        joint_names_split.push_back(names);
-    }
-    else {
-        for (int i = 0; i < 2; i++) {
-            std::vector<std::string> name_i;
-            for (size_t j = 0; j < 7; j++) {
-                name_i.push_back(joint_names[i*7+j]);
-            }
-            joint_names_split.push_back(name_i);
-        }
-    }
-
-
-    for (int i = 0; i < 2; i++) {
-        std::vector<double> start_pose(7, 0.0);
-        std::vector<double> goal_pose(7, 0.0);
-        for (size_t j = 0; j < 7; j++) {
-            start_pose[j] = current_joints[i*7+j];
-            goal_pose[j] = goal_joints[joint_names[i*7+j]];
-        }
-        instance->setStartPose(i, start_pose);
-        instance->setGoalPose(i, goal_pose);
-    }
-
-    PriorityPlanner planner(instance);
-    PlannerOptions options(1.0, 1000000);
-    bool success = planner.plan(options);
-    if (!success) {
-        ROS_INFO("Failed to plan");
-        return;
-    }
-    
-    std::vector<RobotTrajectory> solution;
-    success &= planner.getPlan(solution);
-
-    TPG::TPG tpg;
-    tpg.init(instance, solution, true);
-    tpg.saveToDotFile("tpg.dot");
-
-    //success &= tpg.moveit_execute(instance, move_group);
-    if (async) {
-        std::vector<ros::ServiceClient> clients;
-        for (auto group_name: group_names) {
-            clients.push_back(nh.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
-        }
-        
-        tpg.moveit_mt_execute(joint_names_split, clients);
-    } else {
-        tpg.moveit_execute(instance, move_group);
-    }
-    
-}
     
 
 int main(int argc, char** argv) {
@@ -381,18 +372,50 @@ int main(int argc, char** argv) {
 
     bool async = true;
     bool mfi = true;
+    bool shortcut = true;
+    double planning_time_limit = 2.0;
+    std::string pose_name = "left_push_up";
+    std::string planner_name = "PrioritizedPlanning";
     if (nh_private.hasParam("mfi")) {
         nh_private.getParam("mfi", mfi);
     }
+    if (nh_private.hasParam("async")) {
+        nh_private.getParam("async", async);
+    }
+    if (nh_private.hasParam("pose_name")) {
+        nh_private.getParam("pose_name", pose_name);
+    }
+    if (nh_private.hasParam("planner_name")) {
+        nh_private.getParam("planner_name", planner_name);
+    }
+    if (nh_private.hasParam("planning_time_limit")) {
+        nh_private.getParam("planning_time_limit", planning_time_limit);
+        std::cout << "Planning time limit: " << planning_time_limit << std::endl;
+    }
+    if (nh_private.hasParam("shortcut")) {
+        nh_private.getParam("shortcut", shortcut);
+    }
 
-    auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, async, mfi);
-    pp_tester.test("left_push_up");
-    pp_tester.test("ready_pose");
+    auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, 
+        planner_name, planning_time_limit, async, mfi);
+    //test_planning(*move_group, pose_name);
+    TPG::TPGConfig tpg_config;
+    tpg_config.random_shortcut_time = 1.0;
+    tpg_config.shortcut = shortcut;
+    pp_tester.test(pose_name, tpg_config);
 
-    //test_pp_planning(nh, move_group, planning_scene, kinematic_state, "left_push_up", group_names, async, mfi);
-    //test_pp_planning(move_group, planning_scene, kinematic_state, "right_push");
-    //test_pp_planning(nh, move_group, planning_scene, kinematic_state, "ready_pose", group_names, async, mfi);
-
+    for (int i=1; ; i++ ) {
+        if (nh_private.hasParam("pose_name" + std::to_string(i))) {
+            nh_private.getParam("pose_name" + std::to_string(i), pose_name);
+            //test_planning(*move_group, pose_name);
+            pp_tester.test(pose_name, tpg_config);
+        }
+        else {
+            break;
+        }
+    }
+    
+    
     ros::shutdown();
     return 0;
 }

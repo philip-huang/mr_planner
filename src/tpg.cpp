@@ -17,14 +17,15 @@ void TPG::reset() {
 }
 
 bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
-    bool shortcut) {
+    const TPGConfig &config) {
+    dt_ = config.dt;
     num_robots_ = instance->getNumberOfRobots();
     solution_ = solution;
 
     // 1. populate type 1 nodes
     for (int i = 0; i < num_robots_; i++) {
         double cost = solution_[i].cost;
-        int numNodes = cost / dt_ + 1;
+        int numNodes = std::ceil(cost / dt_) + 1;
         int ind = 0;
         
         std::vector<std::shared_ptr<Node>> nodes_i;
@@ -128,12 +129,16 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges in " + std::to_string(t_simplify) + " ms.", 
         LogLevel::HLINFO);
 
-    //saveToDotFile("tpg_pre.dot");
+    saveToDotFile("tpg_pre.dot");
 
     t_start = std::chrono::high_resolution_clock::now();
 
-    if (shortcut) {
-        findShortcuts(instance);
+    if (config.shortcut) {
+        if (config.random_shortcut) {
+            findShortcutsRandom(instance, config.random_shortcut_time);
+        } else {
+            findShortcuts(instance);
+        }
 
         double t_shortcut = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
         numtype2edges = getTotalType2Edges();
@@ -204,7 +209,11 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
             while (node_j != nullptr && ((node_j->timeStep - node_i->timeStep) > 1)) {
                 std::vector<Eigen::MatrixXi> col_matrix;
                 std::vector<RobotPose> shortcut_path;
-                if (checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix) == true) {
+                auto tic = std::chrono::high_resolution_clock::now();
+                bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
+                auto toc = std::chrono::high_resolution_clock::now();
+                log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()) + " ms", LogLevel::DEBUG);
+                if (valid) {
                     // add the shortcut
                     log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::INFO);
                     log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::INFO);
@@ -217,6 +226,54 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
             node_i = node_i->Type1Next;
         }
     }
+}
+
+void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit) {
+    int numType2Edges = getTotalType2Edges();
+    if (numType2Edges == 0) {
+        return;
+    }
+    
+    // randomly sample shortcuts and check if they are valid for time
+    double elapsed = 0;
+    auto tic = std::chrono::high_resolution_clock::now();
+    while (elapsed < runtime_limit) {
+        int i = std::rand() % num_robots_;
+        int startNode = std::rand() % numNodes_[i];
+        if (startNode >= numNodes_[i] - 2) {
+            continue;
+        }
+        int length = std::rand() % (numNodes_[i] - startNode - 2) + 2;
+        
+        std::shared_ptr<Node> node_i = start_nodes_[i];
+        for (int j = 0; j < startNode; j++) {
+            node_i = node_i->Type1Next;
+            assert(node_i != nullptr);
+        }
+        std::shared_ptr<Node> node_j = node_i;
+        for (int j = 0; j < length; j++) {
+            node_j = node_j->Type1Next;
+            assert(node_j != nullptr);
+        }
+
+        std::vector<Eigen::MatrixXi> col_matrix;
+        std::vector<RobotPose> shortcut_path;
+
+        auto tic_inner = std::chrono::high_resolution_clock::now();
+        bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
+        auto toc_inner = std::chrono::high_resolution_clock::now();
+        log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(toc_inner - tic_inner).count()) + " us", LogLevel::DEBUG);
+        if (valid) {
+            // add the shortcut
+            log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::INFO);
+            log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::INFO);
+            
+            updateTPG(node_i, node_j, shortcut_path, col_matrix);
+        }
+        auto toc = std::chrono::high_resolution_clock::now();
+        elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+    }
+
 }
 
 bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
@@ -254,7 +311,6 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
 
     visited[ni->robotId][ni->timeStep] = true;
     bfs(ni, visited, false);
-
 
     if (shortcutSteps <= 2) {
         // special case, check if the static node collides with any other independent nodes
@@ -308,8 +364,18 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
 void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
         const std::vector<RobotPose> &shortcut_path, const std::vector<Eigen::MatrixXi> &col_matrix) {
     
-    // attach the shortcut to the current TPG
     std::shared_ptr<Node> n_prev = ni;
+    // remove dangling type-2 edge skipped by the shortcut
+    while (n_prev != nj) {
+        for (auto edge : n_prev->Type2Next) {
+            edge.nodeTo->Type2Prev.erase(std::remove_if(edge.nodeTo->Type2Prev.begin(), edge.nodeTo->Type2Prev.end(), 
+                [edge](const type2Edge &element) {return element.edgeId == edge.edgeId;}), edge.nodeTo->Type2Prev.end());
+        }
+        n_prev = n_prev->Type1Next;
+    }
+
+    // attach the shortcut to the current TPG
+    n_prev = ni;
     for (int i = 0; i < shortcut_path.size(); i++) {
         std::shared_ptr<Node> node = std::make_shared<Node>(ni->robotId, n_prev->timeStep + 1);
         node->pose = shortcut_path[i];
@@ -341,7 +407,9 @@ void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
         getCollisionCheckMatrix(ni->robotId, j, col_matrix_ij);
         Eigen::MatrixXi new_col_matrix_ij(numNodes_[ni->robotId], numNodes_[j]);
         new_col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]) = col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]);
-        new_col_matrix_ij.block(ni->timeStep + 1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]) = col_matrix[j].block(1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]);
+        if (col_matrix.size() > j && col_matrix[j].rows() > 0) {
+            new_col_matrix_ij.block(ni->timeStep + 1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]) = col_matrix[j].block(1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]);
+        } 
         new_col_matrix_ij.block(nj->timeStep, 0, numNodes_[ni->robotId] - nj->timeStep, numNodes_[j]) = col_matrix_ij.block(nj_prevt, 0, numNodes_prev - nj_prevt, numNodes_[j]);
 
         updateCollisionCheckMatrix(ni->robotId, j, new_col_matrix_ij);
@@ -613,9 +681,11 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
     }
 
     std::vector<std::vector<bool>> departed;
+    std::vector<bool> reached;
     for (int i = 0; i < num_robots_; i++) {
         std::vector<bool> v(numNodes_[i], false);
         departed.push_back(v);
+        reached.push_back(false);
     }
 
     int flowtime = 0;
@@ -647,17 +717,17 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
                 if (safe) {
                     departed[i][nodes[i]->timeStep] = true;
                     nodes[i] = nodes[i]->Type1Next;
-                    if (nodes[i]->Type1Next == nullptr) {
-                        // reached the end
-                        flowtime += (j+1);
-                    }
                 }
+            }
+            else if (!reached[i]) {
+                reached[i] = true;
+                flowtime += j;
             }
         }
 
         allReached = true;
-        for (auto node : nodes) {
-            allReached &= (node->Type1Next == nullptr);
+        for (int i = 0; i < num_robots_; i++) {
+            allReached &= reached[i];
         }
         j++;
     }
@@ -733,12 +803,9 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             point.velocities.resize(joint_names.size());
             point.accelerations.resize(joint_names.size());
 
-            std::cout << "Robot " << robot_id << " at time " << node_i->timeStep << ": ";
             for (int d = 0; d < node_i->pose.joint_values.size(); d++) {
                 point.positions[d] = node_i->pose.joint_values[d];
-                std::cout << point.positions[d] << " ";
             }
-            std::cout << std::endl;
             joint_traj.points.push_back(point);
 
             j++;
@@ -773,6 +840,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
                 error += error_d;
                 std::cout << error_d << " ";
             }
+            //TODO: check if this hack that set the joint_states to the start state is still necessary
             for (int d = 0; d < joint_traj.points[0].positions.size(); d++) {
                 joint_traj.points[0].positions[d] = joint_states_[robot_id][d];
             }
@@ -787,36 +855,33 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
                 log("Failed to call service for robot " + std::to_string(robot_id), LogLevel::ERROR);
                 return;
             }
+            
+            int error_code = srv.response.error_code.val;
+            log("Robot " + std::to_string(robot_id) + " traj execute service, code " + std::to_string(error_code), LogLevel::INFO);
+            if (error_code == moveit_msgs::MoveItErrorCodes::TIMED_OUT) {
+                log("Timeout, retrying...", LogLevel::INFO);
+                retry = true;
+                ros::Duration(0.01).sleep();
+            }
+            else if (error_code < 0) {
+                return;
+            }
             else {
-                int error_code = srv.response.error_code.val;
-                log("Robot " + std::to_string(robot_id) + " traj execute service, code " + std::to_string(error_code), LogLevel::INFO);
-                if (error_code < 0) {
-                    executed_steps_[robot_id]->fetch_add(j);
-                    if (error_code == moveit_msgs::MoveItErrorCodes::TIMED_OUT) {
-                        log("Timeout, retrying...", LogLevel::INFO);
-                        retry = true;
-                        ros::Duration(0.01).sleep();
-                    }
-                    else {
-                        return;
-                    }
-                }
-                else {
-                    log("Success, moving to the next segment", LogLevel::INFO);
-                    executed_steps_[robot_id]->fetch_add(j); // allow following conflict
+                log("Success, moving to the next segment", LogLevel::INFO);
+                executed_steps_[robot_id]->fetch_add(j); // allow following conflict
 
-                    // compute the end pose vs current pose error
-                    if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
-                        double error = 0;
-                        std::cout << "Robot " << robot_id << " end/current errors ";
-                        for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                            double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size() - 1].positions[d]);
-                            error += error_d;
-                            std::cout << error_d << " ";
-                        }
+                // compute the end pose vs current pose error
+                if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
+                    double error = 0;
+                    std::cout << "Robot " << robot_id << " end/current errors ";
+                    for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+                        double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size() - 1].positions[d]);
+                        error += error_d;
+                        std::cout << error_d << " ";
                     }
                 }
             }
+            
         }
     }
 }
