@@ -28,7 +28,7 @@ private:
 
     double max_velocity_scaling_factor_;
     double max_acceleration_scaling_factor_;
-
+    std::string group_name_;
 
 
 public:

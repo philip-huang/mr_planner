@@ -35,9 +35,19 @@
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
         <param name="output_dir" value="$(find mr_planner)/outputs"/>
+        <param name="group_name_0" value="/left_arm" />
+        <param name="group_name_1" value="/right_arm" />
+        <param name="mfi" value="false" />
+        <param name="async" value="true" />
     </node>
     
-    <!-- Start the collision test node -->
-    <!-- <node name="test_collision" pkg="mr_planner" type="test_collision" output="screen"/> -->
+    <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">
+        <param name="group_name" value="left_arm" />
+    </node>
+
+    <node name="right_arm" pkg="mr_planner" type="yk_robot" output="screen">
+        <param name="group_name" value="right_arm" />
+    </node>
+
 
 </launch>

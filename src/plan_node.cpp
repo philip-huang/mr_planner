@@ -83,8 +83,9 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Goa
 
 class DualArmPlanner {
 public:
-    DualArmPlanner(const std::string &planner_type, const std::string &output_dir) : 
-        planner_type_(planner_type), output_dir_(output_dir) {
+    DualArmPlanner(const std::string &planner_type, const std::string &output_dir,
+                const std::vector<std::string> &group_names, bool async, bool mfi) : 
+        planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), async_(async), mfi_(mfi) {
         robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
         robot_model_ = robot_model_loader.getModel();
         move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(PLANNING_GROUP);
@@ -110,6 +111,8 @@ public:
         instance_->setNumberOfRobots(2);
         instance_->setRobotNames({"left_arm", "right_arm"});
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
+
+        tpg_ = std::make_shared<TPG::TPG>();
 
     }
 
@@ -189,11 +192,58 @@ public:
         return success;
     }
 
+    void setup_once() {
+        /*
+        Set joint name and record start locations. Necessary for execution
+        */
+        joint_names_ = move_group_->getVariableNames();
+        joint_names_split_.clear();
+        left_arm_joint_state_received = false;
+        right_arm_joint_state_received = false;
+
+        if (mfi_) {
+            std::vector<std::string> names;
+            names.push_back("joint_1_s");
+            names.push_back("joint_2_l");
+            names.push_back("joint_3_u");
+            names.push_back("joint_4_r");
+            names.push_back("joint_5_b");
+            names.push_back("joint_6_t");
+            joint_names_split_.push_back(names);
+            joint_names_split_.push_back(names);
+            current_joints_.resize(14, 0.0);
+           
+            left_arm_sub = nh_.subscribe(group_names_[0] + "/joint_states", 1, &DualArmPlanner::left_arm_joint_state_cb, this);
+            right_arm_sub = nh_.subscribe(group_names_[1] + "/joint_states", 1, &DualArmPlanner::right_arm_joint_state_cb, this);
+
+            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+                ros::Duration(0.1).sleep();
+            }
+        }
+        else {
+            current_joints_.resize(14, 0.0);
+            for (int i = 0; i < 2; i++) {
+                std::vector<std::string> name_i;
+                for (size_t j = 0; j < 7; j++) {
+                    name_i.push_back(joint_names_[i*7+j]);
+                }
+                joint_names_split_.push_back(name_i);
+            }
+            dual_arm_sub = nh_.subscribe("/joint_states", 1, &DualArmPlanner::dual_arm_joint_state_cb, this);
+            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+                ros::Duration(0.1).sleep();
+            }
+        }
+    }
+
     bool priority_plan(const std::vector<GoalPose>& goal_poses) {
         bool success = true;
-        std::vector<double> current_joints = move_group_->getCurrentJointValues();
         for (size_t i = 0; i < goal_poses.size(); i++) {
-            instance_->setStartPose(i, std::vector<double>(current_joints.begin() + i*7, current_joints.begin() + (i+1)*7));
+            std::vector<double> start_pose(7, 0.0);
+            for (size_t j = 0; j < 7; j++) {
+                start_pose[j] = current_joints_[i*7+j];
+            }
+            instance_->setStartPose(i, start_pose);
             instance_->setGoalPose(i, goal_poses[i].joint_values);
         }
         // Use the PlanningSceneMonitor to update and get the current planning scene
@@ -206,12 +256,21 @@ public:
             success &= pp_planner_->getPlan(solution);
 
             // compute TPG
-            std::shared_ptr<TPG::TPG> tpg = std::make_shared<TPG::TPG>();
+            tpg_->reset();
             TPG::TPGConfig tpg_config;
-            success &= tpg->init(instance_, solution, tpg_config);
-            //success &= tpg->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
-
-            success &= tpg->moveit_execute(instance_, move_group_);
+            success &= tpg_->init(instance_, solution, tpg_config);
+            //success &= tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
+            
+            if (async_) {
+                std::vector<ros::ServiceClient> clients;
+                for (auto group_name: group_names_) {
+                    clients.push_back(nh_.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
+                }
+                
+                success &= tpg_->moveit_mt_execute(joint_names_split_, clients);
+            } else {
+                success &= tpg_->moveit_execute(instance_, move_group_);
+            }
         }
         return success;
     }
@@ -615,6 +674,47 @@ public:
         return true;
     }
 
+    void left_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 6; i++) {
+            current_joints_[i] = msg->position[i];
+        }
+        if (tpg_ == nullptr) {
+            ROS_ERROR("TPG is not initialized");
+            return;
+        }
+        tpg_->update_joint_states(msg->position, 0);
+        left_arm_joint_state_received = true;
+    }
+
+    void right_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 6; i++) {
+            current_joints_[7+i] = msg->position[i];
+        }
+        if (tpg_ == nullptr) {
+            ROS_ERROR("TPG is not initialized");
+            return;
+        }
+        tpg_->update_joint_states(msg->position, 1);
+        right_arm_joint_state_received = true;
+    }
+
+    void dual_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
+        for (size_t i = 0; i < 7; i++) {
+            current_joints_[i] = msg->position[i];
+            current_joints_[7+i] = msg->position[7+i];
+        }
+        std::vector<double> left_joints(msg->position.begin(), msg->position.begin()+7);
+        std::vector<double> right_joints(msg->position.begin()+7, msg->position.begin()+14);
+        if (tpg_ == nullptr) {
+            ROS_ERROR("TPG is not initialized");
+            return;
+        }
+        tpg_->update_joint_states(left_joints, 0);
+        tpg_->update_joint_states(right_joints, 1);
+        left_arm_joint_state_received = true;
+        right_arm_joint_state_received = true;
+    }
+
 
 private:
     ros::NodeHandle nh_;
@@ -638,6 +738,21 @@ private:
     ros::ServiceClient planning_scene_diff_client;
     ros::ServiceClient get_planning_scene_client;
 
+    // joint names for execution
+    std::vector<std::string> joint_names_;
+    std::vector<std::vector<std::string>> joint_names_split_;
+    std::vector<double> current_joints_;
+    bool left_arm_joint_state_received = false;
+    bool right_arm_joint_state_received = false;
+    ros::Subscriber left_arm_sub, right_arm_sub, dual_arm_sub;
+
+    // tpg execution
+    std::shared_ptr<TPG::TPG> tpg_;
+
+    bool async_ = false;
+    bool mfi_ = false;
+    std::vector<std::string> group_names_; // group name for moveit controller services
+
     std::string planner_type_;
     std::shared_ptr<MoveitInstance> instance_;
     std::shared_ptr<PriorityPlanner> pp_planner_;
@@ -659,13 +774,23 @@ int main(int argc, char** argv) {
 
 
     std::string file_path, planner_type, config_fname, root_pwd, output_dir;
+    bool async = false;
+    bool mfi = false;
+    std::vector<std::string> group_names = {"left_arm", "right_arm"};
+    for (int i = 0; i < 2; i++) {
+        if (nh.hasParam("group_name_" + std::to_string(i))) {
+            nh.getParam("group_name_" + std::to_string(i), group_names[i]);
+       }
+    }
     //retrieve the file path as ros param
     nh.getParam("fullorder_targets_filename", file_path);
     nh.getParam("planner_type", planner_type);
     nh.param<std::string>("config_fname", config_fname, "");
     nh.param<std::string>("root_pwd", root_pwd, "");
     nh.param<std::string>("output_dir", output_dir, "");
-    DualArmPlanner planner(planner_type, output_dir);
+    nh.param<bool>("async", async, false);
+    nh.param<bool>("mfi", mfi, false);
+    DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
 
     // wait 2 seconds
     ros::Duration(2).sleep();
@@ -680,6 +805,8 @@ int main(int argc, char** argv) {
         planner.setLegoFactory(config_fname, root_pwd);
         planner.initLegoPositions();
     }
+
+    planner.setup_once();
 
     int mode = 1;
     int task_idx = 1;

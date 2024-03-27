@@ -778,7 +778,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
         // check if we can execute the current node
         bool safe = true;
         for (auto edge : node_i->Type1Next->Type2Prev) {
-            if (executed_steps_[edge.nodeFrom->robotId]->load() < edge.nodeFrom->timeStep) {
+            if (executed_steps_[edge.nodeFrom->robotId]->load() <= edge.nodeFrom->timeStep) {
                 safe = false;
             }
         }
@@ -796,6 +796,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
         joint_traj.joint_names = joint_names;
 
         joint_traj.points.clear();
+        bool stop = false;
         do {
             trajectory_msgs::JointTrajectoryPoint point;
             point.time_from_start = ros::Duration(j * dt_);
@@ -811,7 +812,16 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             j++;
             node_i = node_i->Type1Next;
             
-        } while ((node_i->Type1Next != nullptr) && (node_i->Type2Prev.size() == 0) && (node_i->Type2Next.size() == 0));
+            //stop = (node_i->Type1Next == nullptr) || (node_i->Type1Next->Type2Prev.size() > 0) || (node_i->Type2Next.size() > 0);
+            stop = (node_i->Type1Next == nullptr);
+            if (!stop) {
+                for (auto edge : node_i->Type1Next->Type2Prev) {
+                    if (executed_steps_[edge.nodeFrom->robotId]->load() <= edge.nodeFrom->timeStep) {
+                        stop = true;
+                    }
+                }
+            }
+        } while (!stop);
         trajectory_msgs::JointTrajectoryPoint point;
         point.time_from_start = ros::Duration(j * dt_);
         point.positions.resize(joint_names.size());
@@ -830,26 +840,28 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             }
         }
 
-        // compute th error of the current joint state vs the start state
-        double error = 0;
-        if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
-            std::cout << "Robot " << robot_id << " start/current errors ";
-
-            for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
-                error += error_d;
-                std::cout << error_d << " ";
-            }
-            //TODO: check if this hack that set the joint_states to the start state is still necessary
-            for (int d = 0; d < joint_traj.points[0].positions.size(); d++) {
-                joint_traj.points[0].positions[d] = joint_states_[robot_id][d];
-            }
-        }
-
+        
         // execute the plan now
         bool retry = true;
         while (retry) {
             retry = false;
+            // compute th error of the current joint state vs the start state
+            double error = 0;
+            if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
+                std::cout << "Robot " << robot_id << " start/current errors ";
+
+                for (int d = 0; d < joint_states_[robot_id].size(); d++) {
+                    double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
+                    error += error_d;
+                    std::cout << error_d << " ";
+                }
+                //TODO: check if this hack that set the joint_states to the start state is still necessary
+                for (int d = 0; d < joint_traj.points[0].positions.size(); d++) {
+                    joint_traj.points[0].positions[d] = joint_states_[robot_id][d];
+                }
+            }
+
+            // Call the service to execute the trajectory
             bool result = clients.call(srv);
             if (!result) {
                 log("Failed to call service for robot " + std::to_string(robot_id), LogLevel::ERROR);
@@ -868,18 +880,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             }
             else {
                 log("Success, moving to the next segment", LogLevel::INFO);
-                executed_steps_[robot_id]->fetch_add(j); // allow following conflict
-
-                // compute the end pose vs current pose error
-                if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
-                    double error = 0;
-                    std::cout << "Robot " << robot_id << " end/current errors ";
-                    for (int d = 0; d < joint_states_[robot_id].size(); d++) {
-                        double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[joint_traj.points.size() - 1].positions[d]);
-                        error += error_d;
-                        std::cout << error_d << " ";
-                    }
-                }
+                //executed_steps_[robot_id]->fetch_add(j); // allow following conflict
             }
             
         }
@@ -896,6 +897,25 @@ void TPG::update_joint_states(const std::vector<double> &joint_states, int robot
             joint_states_[robot_id].push_back(joint_states[i]);
         } else {
             joint_states_[robot_id][i] = joint_states[i];
+        }
+    }
+
+    if (executed_steps_.size() > robot_id && executed_steps_[robot_id] != nullptr) {
+        int next_step = executed_steps_[robot_id]->load() + 1;
+        std::shared_ptr<Node> node_i = start_nodes_[robot_id];
+        for (int j = 0; j < next_step; j++) {
+            if (node_i->Type1Next != nullptr) {
+                node_i = node_i->Type1Next;
+            }
+        }
+
+        double error = 0;
+        for (int i = 0; i < joint_states_[robot_id].size(); i++) {
+            error += std::abs(joint_states_[robot_id][i] - node_i->pose.joint_values[i]);
+        }
+        if (error < 0.01) {
+            executed_steps_[robot_id]->fetch_add(1);
+            log("Robot " + std::to_string(robot_id) + " reached step " + std::to_string(next_step), LogLevel::INFO);
         }
     }
 

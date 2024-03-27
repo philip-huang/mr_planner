@@ -1,7 +1,7 @@
 #include "yk_interface.h"
 
 YK_Interface::YK_Interface(std::string group_name, ros::NodeHandle &nh_)
-    : move_group_(group_name)
+    : move_group_(group_name), group_name_(group_name)
 {
     ROS_INFO_STREAM("planning frame.." << move_group_.getPlanningFrame());
     ROS_INFO_STREAM("pose reference frame.." << move_group_.getPoseReferenceFrame());
@@ -31,9 +31,10 @@ bool YK_Interface::executeTrajectory(moveit_msgs::ExecuteKnownTrajectory::Reques
 
     if (ret_val.val != moveit_msgs::MoveItErrorCodes::SUCCESS)
     {
-        std::cerr << "Move failed due to ERROR CODE=" << ret_val;
+        std::cerr << group_name_ << " Move failed due to ERROR CODE=" << ret_val;
         return false;
     }
+    std::cout <<  group_name_ <<" Move successful" << std::endl;
 
     async_spinner.stop();
     return true;

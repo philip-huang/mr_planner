@@ -145,16 +145,12 @@ public:
                 kinematic_state(kinematic_state), group_names(group_names), async(async),
                 planning_time_limit(planning_time_limit), mfi(mfi), planner_name(planner_name) { }
 
-    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
-        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
-        instance->setNumberOfRobots(2);
-        instance->setRobotNames({"left_arm", "right_arm"});
-
+    void setup_once() {
         /*
-        Set joint name and record start locations
+        Set joint name and record start locations. Necessary for execution
         */
-        std::vector<std::string> joint_names = move_group->getVariableNames();
-        std::vector<std::vector<std::string>> joint_names_split;
+        joint_names = move_group->getVariableNames();
+        joint_names_split.clear();
         left_arm_joint_state_received = false;
         right_arm_joint_state_received = false;
 
@@ -191,6 +187,12 @@ public:
                 ros::Duration(0.1).sleep();
             }
         }
+    }
+
+    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
+        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
+        instance->setNumberOfRobots(2);
+        instance->setRobotNames({"left_arm", "right_arm"});
 
         /*
         Set the start and goal poses for planner instance
@@ -320,10 +322,13 @@ private:
     double planning_time_limit = 2.0;
     double tpg_time_limit = 2.0;
 
+    std::vector<std::string> joint_names;
+    std::vector<std::vector<std::string>> joint_names_split;
+    std::vector<double> current_joints;
+
     TPG::TPG tpg;
     bool left_arm_joint_state_received = false;
     bool right_arm_joint_state_received = false;
-    std::vector<double> current_joints;
     ros::Subscriber left_arm_sub, right_arm_sub, dual_arm_sub;
 };
     
@@ -398,6 +403,7 @@ int main(int argc, char** argv) {
 
     auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, 
         planner_name, planning_time_limit, async, mfi);
+    pp_tester.setup_once();
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
     tpg_config.random_shortcut_time = 1.0;
