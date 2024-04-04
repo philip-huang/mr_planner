@@ -3,7 +3,7 @@
 #include "logger.h"
 
 PriorityPlanner::PriorityPlanner(std::shared_ptr<PlanInstance> instance) : AbstractPlanner(instance) {
-    setLogLevel(LogLevel::INFO);
+    setLogLevel(LogLevel::HLINFO);
 }
 
 bool PriorityPlanner::plan(const PlannerOptions &options) {
@@ -53,5 +53,36 @@ bool PriorityPlanner::getPlan(std::vector<RobotTrajectory> &solution) const {
         return false;
     }
     solution = solution_;
+    return true;
+}
+
+bool convertSolution(std::shared_ptr<PlanInstance> instance,
+                    const moveit::planning_interface::MoveGroupInterface::Plan &plan,
+                    std::vector<RobotTrajectory> &solution) {
+    // Convert a MoveIt plan to a RobotTrajectory
+    int numRobots = instance->getNumberOfRobots();
+    solution.resize(numRobots);
+    for (int i = 0; i < numRobots; i++) {
+        solution[i].robot_id = i;
+    }
+
+    for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
+        int st = 0;
+        for (int j = 0; j < numRobots; j++) {
+            RobotPose pose = instance->initRobotPose(j);
+            assert (st + pose.joint_values.size() <= plan.trajectory_.joint_trajectory.points[i].positions.size());
+            for (int k = 0; k < pose.joint_values.size(); k++) {
+                pose.joint_values[k] = plan.trajectory_.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
+            }
+            solution[j].trajectory.push_back(pose);
+            solution[j].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
+            st += pose.joint_values.size();
+        }
+    }
+
+    for (int i = 0; i < numRobots; i++) {
+        solution[i].cost = solution[i].times.back();
+    }
+
     return true;
 }

@@ -112,8 +112,6 @@ public:
         instance_->setRobotNames({"left_arm", "right_arm"});
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
 
-        tpg_ = std::make_shared<TPG::TPG>();
-
     }
 
     bool solveIKJointlyForPose(const EigenSTL::vector_Isometry3d &poses, 
@@ -176,17 +174,18 @@ public:
     }
 
 
-    bool planAndMoveJointSpace(const std::vector<GoalPose>& goal_poses, const std::vector<double>& joint_values) {
+    bool planJointSpace(const std::vector<GoalPose>& goal_poses, const std::vector<double>& joint_values,
+                std::vector<RobotTrajectory> &solution) {
         bool success;
         if (planner_type_ == "BITstar") {
                 move_group_->setPlannerId("BITstar");
-                success = moveit_plan(joint_values);
+                success = moveit_plan(joint_values, solution);
         } else if (planner_type_ == "RRTConnect") {
                 move_group_->setPlanningTime(1.0);
                 move_group_->setPlannerId("RRTConnect");
-                success = moveit_plan(joint_values);
+                success = moveit_plan(joint_values, solution);
         } else if (planner_type_ == "PrioritizedPlanning") {
-                success = priority_plan(goal_poses);
+                success = priority_plan(goal_poses, solution);
         }
 
         return success;
@@ -216,6 +215,11 @@ public:
             left_arm_sub = nh_.subscribe(group_names_[0] + "/joint_states", 1, &DualArmPlanner::left_arm_joint_state_cb, this);
             right_arm_sub = nh_.subscribe(group_names_[1] + "/joint_states", 1, &DualArmPlanner::right_arm_joint_state_cb, this);
 
+
+            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+                ros::Duration(0.1).sleep();
+            }
+         
             while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
                 ros::Duration(0.1).sleep();
             }
@@ -230,13 +234,10 @@ public:
                 joint_names_split_.push_back(name_i);
             }
             dual_arm_sub = nh_.subscribe("/joint_states", 1, &DualArmPlanner::dual_arm_joint_state_cb, this);
-            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
-                ros::Duration(0.1).sleep();
-            }
         }
     }
 
-    bool priority_plan(const std::vector<GoalPose>& goal_poses) {
+    bool priority_plan(const std::vector<GoalPose>& goal_poses, std::vector<RobotTrajectory>& solution) {
         bool success = true;
         for (size_t i = 0; i < goal_poses.size(); i++) {
             std::vector<double> start_pose(7, 0.0);
@@ -252,63 +253,21 @@ public:
         success &= pp_planner_->plan(options);
         if (success) {
             ROS_INFO("Prioritized Planning succeeded");
-            std::vector<RobotTrajectory> solution;
             success &= pp_planner_->getPlan(solution);
-
-            // compute TPG
-            tpg_->reset();
-            TPG::TPGConfig tpg_config;
-            success &= tpg_->init(instance_, solution, tpg_config);
-            //success &= tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
-            
-            if (async_) {
-                std::vector<ros::ServiceClient> clients;
-                for (auto group_name: group_names_) {
-                    clients.push_back(nh_.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
-                }
-                
-                success &= tpg_->moveit_mt_execute(joint_names_split_, clients);
-            } else {
-                success &= tpg_->moveit_execute(instance_, move_group_);
-            }
         }
         return success;
     }
 
-    bool moveit_plan(const std::vector<double>& joint_values) {
+    bool moveit_plan(const std::vector<double>& joint_values, std::vector<RobotTrajectory>& solution) {
         move_group_->setJointValueTarget(joint_values);
         ROS_INFO("Planning with planner: %s", move_group_->getPlannerId().c_str());
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         bool success = (move_group_->plan(my_plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
 
-        // // print the plan
-        // auto joint_traj = my_plan.trajectory_.joint_trajectory;
-        // //names first
-        // for (auto name : joint_traj.joint_names) {
-        //     std::cout << name << " ";
-        // }
-        // std::cout << std::endl;
-        // for (size_t i = 0; i < joint_traj.points.size(); i++) {
-        //     std::cout << "Pos " << i << ": ";
-        //     for (size_t j = 0; j < joint_traj.points[i].positions.size(); j++) {
-        //         std::cout << joint_traj.points[i].positions[j] << " ";
-        //     }
-        //     // velocity
-        //     std::cout << "Vel " << i << ": ";
-        //     for (size_t j = 0; j < joint_traj.points[i].velocities.size(); j++) {
-        //         std::cout << joint_traj.points[i].velocities[j] << " ";
-        //     }
-        //     // acceleration
-        //     std::cout << "Acc " << i << ": ";
-        //     for (size_t j = 0; j < joint_traj.points[i].accelerations.size(); j++) {
-        //         std::cout << joint_traj.points[i].accelerations[j] << " ";
-        //     }
-        //     std::cout << std::endl;
-        // }
         if (success) {
             ROS_INFO("Planning succeeded");
+            convertSolution(instance_, my_plan, solution);
             // set the new start state to the target state
-            move_group_->execute(my_plan);
         } else {
             ROS_ERROR("Planning failed");
         }
@@ -316,32 +275,70 @@ public:
         return success;
     }
 
-    bool planAndMovePose(const std::vector<GoalPose>& poses) {
-        move_group_->setPoseTarget(poses[0].pose, "left_arm_link_camera");
-        move_group_->setPoseTarget(poses[1].pose, "right_arm_link_camera");
-        moveit::planning_interface::MoveGroupInterface::Plan my_plan;
-        move_group_->setPlannerId("RRTConnect");
-        bool success = (move_group_->plan(my_plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
-        if (success) {
-            ROS_INFO("Planning succeeded");
-            // set the new start state to the target state
-            move_group_->execute(my_plan);
+    bool execute(std::shared_ptr<TPG::TPG> tpg) {
+        tpg_ = tpg;
+        while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
+            ros::Duration(0.1).sleep();
+        }
+        
+        bool success = true;
+        if (async_) {
+            std::vector<ros::ServiceClient> clients;
+            for (auto group_name: group_names_) {
+                clients.push_back(nh_.serviceClient<moveit_msgs::ExecuteKnownTrajectory>(group_name + "/yk_execute_trajectory"));
+            }
+            success &= tpg->moveit_mt_execute(joint_names_split_, clients);
         } else {
-            ROS_ERROR("Planning failed");
+            success &= tpg->moveit_execute(instance_, move_group_);
         }
         return success;
     }
 
-    bool planAndMove(const std::vector<GoalPose>& poses) {
+    bool saveTPG(std::shared_ptr<TPG::TPG> tpg, const std::string &filename) {
+        std::ofstream ofs(filename);
+        if (!ofs.is_open()) {
+            ROS_ERROR("Failed to open file: %s", filename.c_str());
+            return false;
+        }
+        boost::archive::text_oarchive oa(ofs);
+        oa << tpg;
+        
+        return true;
+    }
+
+    std::shared_ptr<TPG::TPG> loadTPG(const std::string &filename) {
+        // open the file safely
+        std::ifstream ifs(filename);
+        if (!ifs.is_open()) {
+            ROS_ERROR("Failed to open file: %s", filename.c_str());
+            return nullptr;
+        }
+        std::shared_ptr<TPG::TPG> tpg = std::make_shared<TPG::TPG>();
+        boost::archive::text_iarchive ia(ifs);
+        ia >> tpg;
+        return tpg;
+    }
+
+    bool planAndMove(const std::vector<GoalPose>& poses, const TPG::TPGConfig &tpg_config) {
         std::vector<double> all_joints;
         std::vector<double> all_joints_given;
         for (auto pose : poses) {
             all_joints_given.insert(all_joints_given.end(), pose.joint_values.begin(), pose.joint_values.end());
         }
-        // for (size_t i = 0; i < all_joints_given.size(); i++) {
-        //     ROS_INFO("Joint %lu: %f", i, all_joints_given[i]);
-        // }
-        bool success = planAndMoveJointSpace(poses, all_joints_given);
+        std::vector<RobotTrajectory> solution;
+        bool success = planJointSpace(poses, all_joints_given, solution);
+        if (success) {
+            if (tpg_ == nullptr) {
+                tpg_ = std::make_shared<TPG::TPG>();
+            }
+            tpg_->reset();
+            
+            success &= tpg_->init(instance_, solution, tpg_config);
+            saveTPG(tpg_, output_dir_ + "/tpg_" + std::to_string(counter_) + ".txt");
+            tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
+
+            success &= execute(tpg_);
+        }
         counter_++;
         return success;
 
@@ -678,24 +675,22 @@ public:
         for (size_t i = 0; i < 6; i++) {
             current_joints_[i] = msg->position[i];
         }
-        if (tpg_ == nullptr) {
-            ROS_ERROR("TPG is not initialized");
-            return;
+        if (tpg_ != nullptr) {
+            tpg_->update_joint_states(msg->position, 0);
+            left_arm_joint_state_received = true;
         }
-        tpg_->update_joint_states(msg->position, 0);
-        left_arm_joint_state_received = true;
+
     }
 
     void right_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
         for (size_t i = 0; i < 6; i++) {
             current_joints_[7+i] = msg->position[i];
         }
-        if (tpg_ == nullptr) {
-            ROS_ERROR("TPG is not initialized");
-            return;
+        if (tpg_ != nullptr) {
+            tpg_->update_joint_states(msg->position, 1);
+            right_arm_joint_state_received = true;
         }
-        tpg_->update_joint_states(msg->position, 1);
-        right_arm_joint_state_received = true;
+        
     }
 
     void dual_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
@@ -705,14 +700,13 @@ public:
         }
         std::vector<double> left_joints(msg->position.begin(), msg->position.begin()+7);
         std::vector<double> right_joints(msg->position.begin()+7, msg->position.begin()+14);
-        if (tpg_ == nullptr) {
-            ROS_ERROR("TPG is not initialized");
-            return;
+        if (tpg_ != nullptr) {
+            tpg_->update_joint_states(left_joints, 0);
+            tpg_->update_joint_states(right_joints, 1);
+            left_arm_joint_state_received = true;
+            right_arm_joint_state_received = true;
         }
-        tpg_->update_joint_states(left_joints, 0);
-        tpg_->update_joint_states(right_joints, 1);
-        left_arm_joint_state_received = true;
-        right_arm_joint_state_received = true;
+
     }
 
 
@@ -776,6 +770,7 @@ int main(int argc, char** argv) {
     std::string file_path, planner_type, config_fname, root_pwd, output_dir;
     bool async = false;
     bool mfi = false;
+    bool load_tpg = false;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
@@ -790,6 +785,9 @@ int main(int argc, char** argv) {
     nh.param<std::string>("output_dir", output_dir, "");
     nh.param<bool>("async", async, false);
     nh.param<bool>("mfi", mfi, false);
+    nh.param<bool>("load_tpg", load_tpg, false);
+    TPG::TPGConfig tpg_config;
+
     DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
 
     // wait 2 seconds
@@ -832,7 +830,15 @@ int main(int argc, char** argv) {
 
         ROS_INFO("mode %d, task_id: %d, use robot 1: %d, use robot 2: %d", mode, task_idx, poses[0].use_robot, poses[1].use_robot);
         //planner.checkFK(poses);
-        planner.planAndMove(poses);
+        if (load_tpg) {
+            std::shared_ptr<TPG::TPG> tpg = planner.loadTPG(output_dir + "/tpg_" + std::to_string(i) + ".txt");
+            if (tpg != nullptr) {
+                planner.execute(tpg);
+            }
+        }
+        else {
+            planner.planAndMove(poses, tpg_config);
+        }
 
         mode ++;
         if (mode == 13) {

@@ -12,7 +12,7 @@ add_definitions(-D_OS_UNIX)
 # /*                                Find Package                                */
 # /* -------------------------------------------------------------------------- */
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED system filesystem date_time thread)
+find_package(Boost REQUIRED system filesystem date_time thread serialization)
 find_package(ompl REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -59,6 +59,7 @@ target_link_libraries(${PROJECT_NAME}
   Eigen3::Eigen
   ${catkin_LIBRARIES}
   ${OMPL_LIBRARIES}
+  ${Boost_LIBRARIES}
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

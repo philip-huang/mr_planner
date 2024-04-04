@@ -48,4 +48,9 @@ protected:
     bool random_order_ = false;
 };
 
+// utils
+bool convertSolution(std::shared_ptr<PlanInstance> instance,
+                    const moveit::planning_interface::MoveGroupInterface::Plan &plan,
+                    std::vector<RobotTrajectory> &solution);
+
 #endif // MR_PLANNER_PLANNER_H

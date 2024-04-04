@@ -19,6 +19,7 @@ void TPG::reset() {
 bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
     const TPGConfig &config) {
     dt_ = config.dt;
+    config_ = config;
     num_robots_ = instance->getNumberOfRobots();
     solution_ = solution;
 
@@ -98,8 +99,12 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
             std::shared_ptr<Node> node_i = start_nodes_[i];
             while (node_i != nullptr) {
                 std::shared_ptr<Node> node_j = start_nodes_[j];
-                while (node_j != nullptr && node_j->timeStep < node_i->timeStep) {
+                bool inCollision = false;
+                while (node_j != nullptr && node_j->timeStep <= node_i->timeStep) {
                     if (col_matrix(node_i->timeStep, node_j->timeStep) == 1) {
+                        inCollision = true;
+                    } else if (inCollision) {
+                        inCollision = false;
                         type2Edge edge;
                         edge.edgeId = idType2Edges_;
                         edge.nodeFrom = node_j;
@@ -148,9 +153,18 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         transitiveReduction();
         numtype2edges = getTotalType2Edges();
         log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
+
+        if (config.switch_shortcut) {
+            switchShortcuts();
+        }
     }
 
     // 5. Print the TPG for debugging purposes
+    // Eigen::MatrixXi col_matrix_ij;
+    // getCollisionCheckMatrix(0, 1, col_matrix_ij);
+    // std::cout << "Collision matrix between 0 and 1" << std::endl;
+    // std::cout << col_matrix_ij << std::endl;
+
     for (int i = 0; i < num_robots_; i++) {
         std::shared_ptr<Node> node_i = start_nodes_[i];
         while (node_i != nullptr) {
@@ -261,15 +275,17 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
         auto tic_inner = std::chrono::high_resolution_clock::now();
         bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
-        auto toc_inner = std::chrono::high_resolution_clock::now();
+        auto toc_inner = std::chrono::high_resolution_clock::now();        
         log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(toc_inner - tic_inner).count()) + " us", LogLevel::DEBUG);
+
         if (valid) {
             // add the shortcut
-            log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::INFO);
-            log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::INFO);
+            log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
+            log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
             
             updateTPG(node_i, node_j, shortcut_path, col_matrix);
         }
+
         auto toc = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
     }
@@ -347,6 +363,15 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
             }
             std::shared_ptr<Node> node_j = start_nodes_[j];
             while (node_j != nullptr) {
+                if (config_.ignore_far_collisions) {
+                    if (node_j->timeStep < ni->timeStep - config_.ignore_steps) {
+                        node_j = node_j->Type1Next;
+                        continue;
+                    }
+                    else if (node_j->timeStep > ni->timeStep + shortcutSteps + config_.ignore_steps) {
+                        break;
+                    }
+                }
                 if (visited[j][node_j->timeStep] == false) {
                     col_matrix[j](i, node_j->timeStep) = instance->checkCollision({pose_i, node_j->pose}, true);
                     if (col_matrix[j](i, node_j->timeStep)) {
@@ -405,6 +430,7 @@ void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
         }
         Eigen::MatrixXi col_matrix_ij;
         getCollisionCheckMatrix(ni->robotId, j, col_matrix_ij);
+
         Eigen::MatrixXi new_col_matrix_ij(numNodes_[ni->robotId], numNodes_[j]);
         new_col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]) = col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]);
         if (col_matrix.size() > j && col_matrix[j].rows() > 0) {
@@ -413,66 +439,189 @@ void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
         new_col_matrix_ij.block(nj->timeStep, 0, numNodes_[ni->robotId] - nj->timeStep, numNodes_[j]) = col_matrix_ij.block(nj_prevt, 0, numNodes_prev - nj_prevt, numNodes_[j]);
 
         updateCollisionCheckMatrix(ni->robotId, j, new_col_matrix_ij);
+
+        if (config_.ignore_far_collisions) {
+            // add additional type-2 dependencies for ignored collision checking
+            std::shared_ptr<Node> node_ignored = start_nodes_[j];
+            int steps = 0;
+            if ((ni->timeStep - config_.ignore_steps) > 0) {
+            
+                while (node_ignored != nullptr && steps < (ni->timeStep - config_.ignore_steps)) {
+                    node_ignored = node_ignored->Type1Next;
+                    steps++;
+                }
+                if (node_ignored != nullptr) {
+                    type2Edge edge_b;
+                    edge_b.edgeId = idType2Edges_;
+                    edge_b.nodeFrom = node_ignored;
+                    edge_b.nodeTo = nj;
+                    node_ignored->Type2Next.push_back(edge_b);
+                    nj->Type2Prev.push_back(edge_b);
+                    idType2Edges_++;
+                }
+            }
+
+            if ((nj->timeStep +  config_.ignore_steps) < numNodes_[j]) {
+                while (node_ignored != nullptr && steps <= (nj->timeStep + config_.ignore_steps)) {
+                    node_ignored = node_ignored->Type1Next;
+                    steps++;
+                }
+                if (node_ignored != nullptr) {
+                    type2Edge edge_f;
+                    edge_f.edgeId = idType2Edges_;
+                    edge_f.nodeFrom = nj;
+                    edge_f.nodeTo = node_ignored;
+                    nj->Type2Next.push_back(edge_f);
+                    node_ignored->Type2Prev.push_back(edge_f);
+                    idType2Edges_++;
+                }
+            }
+        }
     }
+
     
-    // update the type 2 edges
-    // std::shared_ptr<Node> node_i = ni;
-    // while (node_i != nullptr) {
-    //     // check all other robots, remove incoming type-2 edges that appear after current timestamp, and add new outgoing type-2 edges 
-    //     for (int k = node_i->Type2Prev.size() - 1; k >= 0; k--) {
-    //         auto edge = node_i->Type2Prev[k];
-    //         auto nodeFrom = edge.nodeFrom;
-    //         auto edgeId = edge.edgeId;
-    //         if (nodeFrom->timeStep > node_i->timeStep) {
-    //             node_i->Type2Prev.erase(node_i->Type2Prev.begin() + k);
-    //             nodeFrom->Type2Next.erase(std::remove_if(nodeFrom->Type2Next.begin(), nodeFrom->Type2Next.end(), 
-    //                 [edgeId](const type2Edge &element) {return element.edgeId == edgeId;}), nodeFrom->Type2Next.end());
-    //         }
-    //     }
-    //     for (int j = 0; j < num_robots_; j++) {
-    //         if (ni->robotId == j) {
-    //             continue;
-    //         }
+}
 
-    //         Eigen::MatrixXi col_matrix_ij;
-    //         getCollisionCheckMatrix(ni->robotId, j, col_matrix_ij);
-    //         std::shared_ptr<Node> node_j = start_nodes_[j];
-    //         while(node_j != nullptr) {
-    //             if (node_j->timeStep > node_i->timeStep && node_j->timeStep <= (node_i->timeStep + reducedSteps)) {
-    //                 if (col_matrix_ij(node_i->timeStep, node_j->timeStep) == 1) {
-    //                     type2Edge edge;
-    //                     edge.edgeId = idType2Edges_;
-    //                     edge.nodeFrom = node_i;
-    //                     edge.nodeTo = node_j;
-    //                     node_i->Type2Next.push_back(edge);
-    //                     node_j->Type2Prev.push_back(edge);
-    //                     idType2Edges_++;
-    //                 }
-    //             }
-    //             node_j = node_j->Type1Next;
-    //         }
-    //     }
-    //     node_i = node_i->Type1Next;
-    // }
+void TPG::switchShortcuts() {
+    for (int i = 0; i < num_robots_; i++) {
+        for (int j = 0; j < num_robots_; j++) {
+            if (i == j) {
+                continue;
+            }
 
+            Eigen::MatrixXi col_matrix_ij;
+            getCollisionCheckMatrix(i, j, col_matrix_ij);
+            // print the collision matrix
+
+            // update the type 2 edges
+            std::shared_ptr<Node> node_i = start_nodes_[i];
+            while (node_i->Type1Next != nullptr) {
+                // check all other robots, remove incoming type-2 edges that appear after current timestamp, and add new outgoing type-2 edges 
+                for (int k = node_i->Type2Prev.size() - 1; k >= 0; k--) {
+                    auto edge = node_i->Type2Prev[k];
+                    if (edge.switchable == false) {
+                        continue;
+                    }
+                    auto nodeFrom = edge.nodeFrom;
+                    auto edgeId = edge.edgeId;
+                    int minWaitTime = nodeFrom->timeStep - node_i->timeStep;
+                    if (minWaitTime > 0) {
+                        // will switch the type2 dependency from node_i->next to node_j_free
+                        std::shared_ptr<Node> node_j_free = nodeFrom; 
+                        while (node_j_free->Type1Prev != nullptr) {
+                            node_j_free = node_j_free->Type1Prev;
+                            if (col_matrix_ij(node_i->timeStep, node_j_free->timeStep) == 0) {
+                                int minSwitchedWaitTime = node_i->timeStep + 1 - node_j_free->timeStep;
+                                if (minSwitchedWaitTime < minWaitTime) {
+                                    type2Edge newEdge;
+                                    newEdge.edgeId = idType2Edges_;
+                                    newEdge.nodeFrom = node_i->Type1Next;
+                                    newEdge.nodeTo = node_j_free;
+                                    node_i->Type1Next->Type2Next.push_back(newEdge);
+                                    node_j_free->Type2Prev.push_back(newEdge);
+                                    idType2Edges_++;
+                                
+                                    node_i->Type2Prev.erase(node_i->Type2Prev.begin() + k);
+                                    nodeFrom->Type2Next.erase(std::remove_if(nodeFrom->Type2Next.begin(), nodeFrom->Type2Next.end(), 
+                                        [edgeId](const type2Edge &element) {return element.edgeId == edgeId;}), nodeFrom->Type2Next.end());
+                                    
+                                    // TODO: fix when type2 edges are inconsistent
+
+                                    log("Removed type 2 dependency from Robot " + std::to_string(nodeFrom->robotId) + " at time "
+                                        + std::to_string(nodeFrom->timeStep) + " -> Robot " + std::to_string(node_i->robotId) + " at time " 
+                                        + std::to_string(node_i->timeStep), LogLevel::INFO);
+                                    log("Added type 2 dependency from Robot " + std::to_string(node_i->robotId) + " at time "
+                                        + std::to_string(node_i->Type1Next->timeStep) + " -> Robot " + std::to_string(node_j_free->robotId) + " at time " 
+                                        + std::to_string(node_j_free->timeStep), LogLevel::INFO);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                node_i = node_i->Type1Next;
+            }
+        }
+
+        // assert (hasCycle() == false);
+    }
+
+}
+
+
+bool TPG::hasCycle() const 
+{
+    // Initialized visited matrix
+    std::vector<std::vector<bool>> visited;
+    std::vector<std::vector<bool>> inStack;
+
+    std::stack<std::shared_ptr<Node>> stack;
+
+    for (int i = 0; i < num_robots_; i++) {
+        std::vector<bool> v(numNodes_[i], false);
+        std::vector<bool> s(numNodes_[i], false);
+        visited.push_back(v);
+        inStack.push_back(s);
+    }
+
+    for (int i = 0; i < num_robots_; i++) {
+        std::shared_ptr<Node> node_i = start_nodes_[i];
+        while (node_i != nullptr) {
+            if (!visited[i][node_i->timeStep]) {
+                stack.push(node_i);
+                // a depth first search to check if there is a cycle
+                // by checking if an element is in the stack
+                while (!stack.empty()) {
+                    std::shared_ptr<Node> node_v = stack.top();
+                    if (!visited[node_v->robotId][node_v->timeStep]) {
+                        visited[node_v->robotId][node_v->timeStep] = true;
+                        inStack[node_v->robotId][node_v->timeStep] = true;
+                    }
+                    else {
+                        inStack[node_v->robotId][node_v->timeStep] = false;
+                        stack.pop();
+                        continue;
+                    }
+
+                    if (node_v->Type1Next != nullptr) {
+                        std::shared_ptr<Node> node_next = node_v->Type1Next;
+                        if (!visited[node_next->robotId][node_next->timeStep]) {
+                            stack.push(node_next);
+                        } else if (inStack[node_next->robotId][node_next->timeStep]) {
+                            return true;
+                        }
+                    }
+                    for (auto edge : node_v->Type2Next) {
+                        if (!visited[edge.nodeTo->robotId][edge.nodeTo->timeStep]) {
+                            stack.push(edge.nodeTo);
+                        } else if (inStack[edge.nodeTo->robotId][edge.nodeTo->timeStep]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            node_i = node_i->Type1Next;
+        }
+    }
+    return false;
 }
 
 bool TPG::dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const
 {
     // DFS function to check if there is a path from ni to nj
     visited[ni->robotId][ni->timeStep] = true;
-    if (ni->Type1Next == nullptr) {
-        return false;
-    }
-    std::shared_ptr<Node> ni_next = ni->Type1Next;
-    
-    // search the next type1 node
-    if (ni_next == nj) {
-        return true;
-    }
-    if (!visited[ni_next->robotId][ni_next->timeStep]) {
-        if (dfs(ni_next, nj, visited)) {
+    if (ni->Type1Next != nullptr) {
+        std::shared_ptr<Node> ni_next = ni->Type1Next;
+        
+        // search the next type1 node
+        if (ni_next == nj) {
             return true;
+        }
+        if (!visited[ni_next->robotId][ni_next->timeStep]) {
+            if (dfs(ni_next, nj, visited)) {
+                return true;
+            }
         }
     }
 
@@ -506,6 +655,7 @@ bool TPG::bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited,
             }
             for (auto edge : node->Type2Next) {
                 if (!visited[edge.nodeTo->robotId][edge.nodeTo->timeStep]) {
+                    edge.switchable = false;
                     q.push(edge.nodeTo);
                     visited[edge.nodeTo->robotId][edge.nodeTo->timeStep] = true;
                 }
@@ -517,6 +667,7 @@ bool TPG::bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited,
             }
             for (auto edge : node->Type2Prev) {
                 if (!visited[edge.nodeFrom->robotId][edge.nodeFrom->timeStep]) {
+                    edge.switchable = false;
                     q.push(edge.nodeFrom);
                     visited[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] = true;
                 }
@@ -658,7 +809,7 @@ bool TPG::actionlib_execute(const std::vector<std::string> &joint_names, Traject
 
     auto doneCb = [](const actionlib::SimpleClientGoalState& state,
         const moveit_msgs::ExecuteTrajectoryResultConstPtr& result) {
-        log("Trajectory execution action finished: " + state.toString(), LogLevel::HLINFO);
+        log("Trajectory execution action finished: " + state.toString(), LogLevel::INFO);
     };
 
     client.sendGoal(goal, doneCb);
@@ -680,12 +831,12 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
         nodes.push_back(node_i);
     }
 
-    std::vector<std::vector<bool>> departed;
-    std::vector<bool> reached;
+    std::vector<std::vector<bool>> reached;
+    std::vector<bool> reached_end;
     for (int i = 0; i < num_robots_; i++) {
         std::vector<bool> v(numNodes_[i], false);
-        departed.push_back(v);
-        reached.push_back(false);
+        reached.push_back(v);
+        reached_end.push_back(false);
     }
 
     int flowtime = 0;
@@ -705,34 +856,34 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
             for (int d = 0; d < pose_j_t.joint_values.size(); d++) {
                 joint_traj.points[j].positions[i*7 + d] = pose_j_t.joint_values[d];
             }
+            reached[i][nodes[i]->timeStep] = true;
 
             if (nodes[i]->Type1Next != nullptr) {
                 bool safe = true;
                 for (auto edge : nodes[i]->Type1Next->Type2Prev) {
-                    if (departed[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] == false) {
+                    if (reached[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] == false) {
                         safe = false;
                         break;
                     }
                 }
                 if (safe) {
-                    departed[i][nodes[i]->timeStep] = true;
                     nodes[i] = nodes[i]->Type1Next;
                 }
             }
-            else if (!reached[i]) {
-                reached[i] = true;
+            else if (!reached_end[i]) {
+                reached_end[i] = true;
                 flowtime += j;
             }
         }
 
         allReached = true;
         for (int i = 0; i < num_robots_; i++) {
-            allReached &= reached[i];
+            allReached &= reached_end[i];
         }
         j++;
     }
 
-    log("Flowtime: " + std::to_string(flowtime), LogLevel::HLINFO);
+    log("Flowtime: " + std::to_string(flowtime), LogLevel::INFO);
 
     // compute velocities and accelerations with central difference
     for (int i = 1; i < joint_traj.points.size() - 1; i++) {
@@ -756,7 +907,7 @@ bool TPG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_n
         threads.emplace_back(&TPG::moveit_async_execute_thread, this, std::ref(joint_names[i]), std::ref(clients[i]), i);
     }
 
-    log("Waiting for all threads to finish...", LogLevel::HLINFO);
+    log("Waiting for all threads to finish...", LogLevel::INFO);
     for (auto &thread : threads) {
         thread.join();
     }
@@ -771,14 +922,14 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
     while (ros::ok()) {
         
         if (node_i->Type1Next == nullptr) {
-            log("Robot " + std::to_string(robot_id) + " reached the end at step " + std::to_string(node_i->timeStep), LogLevel::HLINFO);
+            log("Robot " + std::to_string(robot_id) + " reached the end at step " + std::to_string(node_i->timeStep), LogLevel::INFO);
             return;
         }
 
         // check if we can execute the current node
         bool safe = true;
         for (auto edge : node_i->Type1Next->Type2Prev) {
-            if (executed_steps_[edge.nodeFrom->robotId]->load() <= edge.nodeFrom->timeStep) {
+            if (executed_steps_[edge.nodeFrom->robotId]->load() < edge.nodeFrom->timeStep) {
                 safe = false;
             }
         }
@@ -816,7 +967,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             stop = (node_i->Type1Next == nullptr);
             if (!stop) {
                 for (auto edge : node_i->Type1Next->Type2Prev) {
-                    if (executed_steps_[edge.nodeFrom->robotId]->load() <= edge.nodeFrom->timeStep) {
+                    if (executed_steps_[edge.nodeFrom->robotId]->load() < edge.nodeFrom->timeStep) {
                         stop = true;
                     }
                 }
@@ -879,7 +1030,7 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
                 return;
             }
             else {
-                log("Success, moving to the next segment", LogLevel::INFO);
+                log("Robot " + std::to_string(robot_id) + " success, moving to the next segment", LogLevel::INFO);
                 //executed_steps_[robot_id]->fetch_add(j); // allow following conflict
             }
             
@@ -915,7 +1066,7 @@ void TPG::update_joint_states(const std::vector<double> &joint_states, int robot
         }
         if (error < 0.01) {
             executed_steps_[robot_id]->fetch_add(1);
-            log("Robot " + std::to_string(robot_id) + " reached step " + std::to_string(next_step), LogLevel::INFO);
+            log("Robot " + std::to_string(robot_id) + " reached step " + std::to_string(next_step), LogLevel::DEBUG);
         }
     }
 

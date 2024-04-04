@@ -8,7 +8,11 @@
 #include <actionlib/client/simple_action_client.h>
 #include <moveit_msgs/ExecuteTrajectoryAction.h>
 #include <moveit_msgs/ExecuteKnownTrajectory.h>
-
+#include <boost/serialization/vector.hpp>
+#include <boost/serialization/serialization.hpp>
+#include <boost/serialization/shared_ptr.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/archive/text_iarchive.hpp>
 #include <memory>
 #include <vector>
 #include <random>
@@ -20,6 +24,13 @@
 // Abstract base class for the planning scene interface
 
 struct RobotPose {
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & robot_id;
+        ar & robot_name;
+        ar & joint_values;
+    }
     int robot_id;
     std::string robot_name; // same as group name in moveit
     std::vector<double> joint_values;

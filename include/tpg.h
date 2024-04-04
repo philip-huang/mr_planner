@@ -3,6 +3,7 @@
 
 #include <planner.h>
 #include <queue>
+#include <stack>
 
 typedef actionlib::SimpleActionClient<moveit_msgs::ExecuteTrajectoryAction> TrajectoryClient;
 
@@ -10,13 +11,29 @@ namespace TPG {
     struct TPGConfig {
         bool shortcut = true;
         bool random_shortcut = true;
-        double random_shortcut_time = 1.0;
+        bool ignore_far_collisions = false;
+        double random_shortcut_time = 1;
         double dt = 0.1;
+        double switch_shortcut = false;
+        int ignore_steps = 5;
     };
     
     struct type2Edge;
     struct Node
     {
+        template<class Archive>
+        void serialize(Archive & ar, const unsigned int version)
+        {
+            ar & pose;
+            ar & Type1Next;
+            ar & Type2Next;
+            ar & Type1Prev;
+            ar & Type2Prev;
+            ar & timeStep;
+            ar & robotId;
+            ar & nodeId;
+        }
+
         RobotPose pose; // < The pose of the robot at this Node
         std::shared_ptr<Node> Type1Next;                    ///< Pointer to the next Node of type 1
         std::vector<type2Edge> Type2Next; ///< Vector of pointers to the next Nodes of type 2
@@ -26,6 +43,7 @@ namespace TPG {
         int robotId = -1;                        ///< The ID of the robot at this Node
         int nodeId = -1;                         ///< The ID of the Node
         
+        Node() = default;
         Node(int robot_id, int t)
         {
             this->timeStep = t;
@@ -36,7 +54,17 @@ namespace TPG {
 
     struct type2Edge
     {
+        template<class Archive>
+        void serialize(Archive & ar, const unsigned int version)
+        {
+            ar & edgeId;
+            ar & switchable;
+            ar & nodeFrom;
+            ar & nodeTo;
+        }
+
         int edgeId = -1; ///< The ID of the edge
+        bool switchable = true;                 ///< Whether this Node is switchable
 
         std::shared_ptr<Node> nodeFrom; ///< Pointer to the Node from which this edge originates
         std::shared_ptr<Node> nodeTo;   ///< Pointer to the Node to which this edge leads
@@ -44,6 +72,19 @@ namespace TPG {
 
 
     class TPG {
+    friend class boost::serialization::access;
+
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & dt_;
+        ar & num_robots_;
+        ar & type2Edges_;
+        ar & start_nodes_;
+        ar & end_nodes_;
+        ar & numNodes_;
+        ar & solution_;
+    }
     public:
         TPG() = default;
         void reset();
@@ -65,13 +106,16 @@ namespace TPG {
         void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         bool checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
+        void switchShortcuts();
         void updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             const std::vector<RobotPose> &shortcut_path, const std::vector<Eigen::MatrixXi> &col_matrix);
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
         bool bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const;
+        bool hasCycle() const;
         void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) const;
         void moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id);
 
+        TPGConfig config_;
         double dt_ = 0.1;
         std::vector<std::vector<Eigen::MatrixXi>>  collisionCheckMatrix_; // 1 if no collision, 0 if collision
         int num_robots_;

@@ -234,27 +234,7 @@ public:
                 ROS_INFO("Failed to plan");
                 return;
             }
-            solution.resize(2);
-            solution[0].robot_id = 0;
-            solution[1].robot_id = 1;
-            std::cout << "Plan size: " << plan.trajectory_.joint_trajectory.points.size() << std::endl;
-            for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
-                RobotPose pose1 = instance->initRobotPose(0);
-                RobotPose pose2 = instance->initRobotPose(1);
-
-                for (int j = 0; j < 7; j++) {
-                    pose1.joint_values[j] = plan.trajectory_.joint_trajectory.points[i].positions[j];
-                    pose2.joint_values[j] = plan.trajectory_.joint_trajectory.points[i].positions[j+7];
-                }
-                solution[0].trajectory.push_back(pose1);
-                solution[1].trajectory.push_back(pose2);
-                solution[0].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
-                solution[1].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
-            }
-
-            solution[0].cost = solution[0].times.back();
-            solution[1].cost = solution[1].times.back();
-            
+            convertSolution(instance, plan, solution);        
         }
 
         /*
@@ -406,7 +386,8 @@ int main(int argc, char** argv) {
     pp_tester.setup_once();
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
-    tpg_config.random_shortcut_time = 1.0;
+    tpg_config.random_shortcut_time = 1;
+    tpg_config.ignore_far_collisions = false;
     tpg_config.shortcut = shortcut;
     pp_tester.test(pose_name, tpg_config);
 

@@ -7,6 +7,14 @@
 #include <chrono>
 
 struct RobotTrajectory {
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & robot_id;
+        ar & trajectory;
+        ar & times;
+        ar & cost;
+    }
     int robot_id;
     std::vector<RobotPose> trajectory;
     std::vector<double> times;
@@ -16,7 +24,7 @@ struct RobotTrajectory {
 typedef std::vector<RobotTrajectory> DynamicObstacles;
 
 struct PlannerOptions {
-    double max_planning_time = 0.5;
+    double max_planning_time = 1.0;
     int max_planning_iterations = 10000;
     DynamicObstacles obstacles;
 
