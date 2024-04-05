@@ -11,6 +11,7 @@ void PlanInstance::setNumberOfRobots(int num_robots) {
     num_robots_ = num_robots;
     start_poses_.resize(num_robots);
     goal_poses_.resize(num_robots);
+    robot_dof_.resize(num_robots);
 }
 
 void PlanInstance::setStartPose(int robot_id, const std::vector<double> &pose) {
@@ -25,11 +26,18 @@ void PlanInstance::setGoalPose(int robot_id, const std::vector<double> &pose) {
     goal_poses_[robot_id].joint_values = pose;
 }
 
+void PlanInstance::setRobotDOF(int robot_id, size_t dof) {
+    if (robot_id >= robot_dof_.size()) {
+        robot_dof_.resize(robot_id + 1);
+    }
+    robot_dof_[robot_id] = dof;
+}
+
 RobotPose PlanInstance::initRobotPose(int robot_id) const {
     RobotPose pose;
     pose.robot_id = robot_id;
     pose.robot_name = robot_names_[robot_id];
-    pose.joint_values.resize(start_poses_[robot_id].joint_values.size());
+    pose.joint_values.resize(robot_dof_[robot_id]);
     return pose;
 }
 

@@ -193,6 +193,8 @@ public:
         auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
         instance->setNumberOfRobots(2);
         instance->setRobotNames({"left_arm", "right_arm"});
+        instance->setRobotDOF(0, 7);
+        instance->setRobotDOF(1, 7);
 
         /*
         Set the start and goal poses for planner instance

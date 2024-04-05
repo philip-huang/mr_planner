@@ -30,7 +30,7 @@
     <!-- Start the planning node -->
     
     <node launch-prefix="xterm -e gdb --args" name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
-        <param name="fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
+        <param name="fullorder_targets_filename" value="$(find mr_planner)/assembly_steps/stairs_top.csv" />
         <param name="planner_type" value="PrioritizedPlanning"/>
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
@@ -39,16 +39,16 @@
         <param name="group_name_1" value="/right_arm" />
         <param name="mfi" value="false" />
         <param name="async" value="false" />
-        <param name="load_tpg" value="true" />
+        <param name="load_tpg" value="false" />
     </node>
     
-    <!-- <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">
+    <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">
         <param name="group_name" value="left_arm" />
     </node>
 
     <node name="right_arm" pkg="mr_planner" type="yk_robot" output="screen">
         <param name="group_name" value="right_arm" />
-    </node> -->
+    </node>
 
 
 </launch>

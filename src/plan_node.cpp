@@ -110,6 +110,8 @@ public:
         instance_ = std::make_shared<MoveitInstance>(kinematic_state_, move_group_, planning_scene_);
         instance_->setNumberOfRobots(2);
         instance_->setRobotNames({"left_arm", "right_arm"});
+        instance_->setRobotDOF(0, 7);
+        instance_->setRobotDOF(1, 7);
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
 
     }
@@ -524,12 +526,12 @@ public:
         primitive.dimensions[primitive.BOX_Z] = z; // 1 stud height = 9.6mm + 1.7mm
 
         // // define pose relative to frame id
-        geometry_msgs::Pose box_pose;
-        box_pose.orientation.w = 1.0;
-        box_pose.position.x = 0.006;
-        box_pose.position.y = 0.0;
-        box_pose.position.z = 0.07;
-        ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
+        // geometry_msgs::Pose box_pose;
+        // box_pose.orientation.w = 1.0;
+        // box_pose.position.x = 0.006;
+        // box_pose.position.y = 0.0;
+        // box_pose.position.z = 0.07;
+        // ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
 
         //co.object.primitives.push_back(primitive);
         //co.object.primitive_poses.push_back(box_pose);
@@ -646,16 +648,16 @@ public:
         }
 
         // print the current ACM
-        // for (auto entry : acm.entry_names) {
-        //     ROS_INFO("ACM entry: %s", entry.c_str());
-        // }
-        // for (auto entry : acm.entry_values) {
-        //     std::string line;
-        //     for (auto val : entry.enabled) {
-        //         line += std::to_string(val) + " ";
-        //     }
-        //     ROS_INFO("ACM entry values: %s", line.c_str());
-        // }
+        for (auto entry : acm.entry_names) {
+            ROS_INFO("ACM entry: %s", entry.c_str());
+        }
+        for (auto entry : acm.entry_values) {
+            std::string line;
+            for (auto val : entry.enabled) {
+                line += std::to_string(val) + " ";
+            }
+            ROS_INFO("ACM entry values: %s", line.c_str());
+        }
 
         moveit_msgs::ApplyPlanningScene srv_apply;
         planning_scene.allowed_collision_matrix = acm;
@@ -809,19 +811,23 @@ int main(int argc, char** argv) {
     int mode = 1;
     int task_idx = 1;
     std::string brick_name;
+    std::string last_brick_name = "b2_5"; // TODO: fix this hardcoding
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
-
         if (mode == 1) {
             planner.getLegoBrickName(task_idx, brick_name);
             planner.setCollision(brick_name, "left_arm_link_tool", true);
         }
         if (mode == 4) {
-            ROS_INFO("attach lego to robot 1");
+            ROS_INFO("attach lego to robot 0");
             planner.attachMoveitCollisionObject(brick_name, "left_arm_link_tool");
         }
+        if (mode == 9) {
+            planner.setCollision(last_brick_name, brick_name, true);
+            last_brick_name = brick_name;
+        }
         if (mode == 10) {
-            ROS_INFO("detach lego from robot 1");
+            ROS_INFO("detach lego from robot 0");
             planner.detachMoveitCollisionObject(brick_name);
         }
         if (mode == 12) {

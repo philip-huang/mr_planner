@@ -78,9 +78,12 @@ public:
 
     virtual RobotPose initRobotPose(int robot_id) const;
 
+    virtual void setRobotDOF(int robot_id, size_t dof);
+
 protected:
     int num_robots_;
     std::vector<RobotPose> start_poses_;
+    std::vector<size_t> robot_dof_;
     std::vector<RobotPose> goal_poses_;
     std::vector<std::string> robot_names_;
 };
