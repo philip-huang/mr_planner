@@ -44,7 +44,7 @@ public:
 private:
     LogMethod method;
 
-    LogLevel logLevel;
+    LogLevel logLevel = LogLevel::INFO;
 
     std::ofstream fileStream;
     std::mutex mtx; // For thread safety

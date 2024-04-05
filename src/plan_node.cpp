@@ -19,6 +19,7 @@
 
 #include <planner.h>
 #include <tpg.h>
+#include <logger.h>
 #include <lego/Lego.hpp>
 
 const std::string PLANNING_GROUP = "dual_arms";
@@ -215,14 +216,6 @@ public:
             left_arm_sub = nh_.subscribe(group_names_[0] + "/joint_states", 1, &DualArmPlanner::left_arm_joint_state_cb, this);
             right_arm_sub = nh_.subscribe(group_names_[1] + "/joint_states", 1, &DualArmPlanner::right_arm_joint_state_cb, this);
 
-
-            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
-                ros::Duration(0.1).sleep();
-            }
-         
-            while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
-                ros::Duration(0.1).sleep();
-            }
         }
         else {
             current_joints_.resize(14, 0.0);
@@ -275,11 +268,16 @@ public:
         return success;
     }
 
-    bool execute(std::shared_ptr<TPG::TPG> tpg) {
+    void reset_joint_states_flag(std::shared_ptr<TPG::TPG> tpg) {
         tpg_ = tpg;
+        left_arm_joint_state_received = false;
+        right_arm_joint_state_received = false;
         while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
             ros::Duration(0.1).sleep();
         }
+    }
+
+    bool execute(std::shared_ptr<TPG::TPG> tpg) {
         
         bool success = true;
         if (async_) {
@@ -786,6 +784,9 @@ int main(int argc, char** argv) {
     nh.param<bool>("async", async, false);
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
+
+    setLogLevel(LogLevel::INFO);
+
     TPG::TPGConfig tpg_config;
 
     DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
@@ -805,6 +806,7 @@ int main(int argc, char** argv) {
     }
 
     planner.setup_once();
+    ROS_INFO("Execution setup done");
 
     int mode = 1;
     int task_idx = 1;
@@ -833,6 +835,7 @@ int main(int argc, char** argv) {
         if (load_tpg) {
             std::shared_ptr<TPG::TPG> tpg = planner.loadTPG(output_dir + "/tpg_" + std::to_string(i) + ".txt");
             if (tpg != nullptr) {
+                planner.reset_joint_states_flag(tpg);
                 planner.execute(tpg);
             }
         }
