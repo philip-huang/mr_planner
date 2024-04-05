@@ -999,13 +999,15 @@ void TPG::moveit_async_execute_thread(const std::vector<std::string> &joint_name
             // compute th error of the current joint state vs the start state
             double error = 0;
             if (joint_states_.size() > robot_id && joint_states_[robot_id].size() >= joint_traj.points[0].positions.size()) {
-                std::cout << "Robot " << robot_id << " start/current errors ";
+                log("Robot " + std::to_string(robot_id) + " start/current errors ", LogLevel::DEBUG);
 
+                std::string error_str = "Error: ";
                 for (int d = 0; d < joint_states_[robot_id].size(); d++) {
                     double error_d = std::abs(joint_states_[robot_id][d] - joint_traj.points[0].positions[d]);
                     error += error_d;
-                    std::cout << error_d << " ";
+                    error_str += std::to_string(error_d) + " ";
                 }
+                log(error_str, LogLevel::DEBUG);
                 //TODO: check if this hack that set the joint_states to the start state is still necessary
                 for (int d = 0; d < joint_traj.points[0].positions.size(); d++) {
                     joint_traj.points[0].positions[d] = joint_states_[robot_id][d];

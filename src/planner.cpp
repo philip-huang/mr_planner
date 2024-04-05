@@ -3,7 +3,6 @@
 #include "logger.h"
 
 PriorityPlanner::PriorityPlanner(std::shared_ptr<PlanInstance> instance) : AbstractPlanner(instance) {
-    setLogLevel(LogLevel::HLINFO);
 }
 
 bool PriorityPlanner::plan(const PlannerOptions &options) {
