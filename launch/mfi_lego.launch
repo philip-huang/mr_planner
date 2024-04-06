@@ -6,13 +6,13 @@
     <!-- Start the planning node -->
     
     <node name="mr_planner_node" pkg="mr_planner" type="mr_planner_node" output="screen">
-        <param name="fullorder_targets_filename" value="$(find mr_planner)/record_steps.csv" />
+        <param name="fullorder_targets_filename" value="$(find mr_planner)/assembly_steps/stairs_top.csv" />
         <param name="planner_type" value="PrioritizedPlanning"/>
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
         <param name="output_dir" value="$(find mr_planner)/outputs"/>
         <param name="group_name_0" value="/yk_destroyer" />
-        <param name="group_name_1" value="/yk_architect" />
+        <param name="group_name_1" value="/sim2" />
         <param name="mfi" value="true" />
         <param name="async" value="true" />
         <param name="load_tpg" value="true" />
