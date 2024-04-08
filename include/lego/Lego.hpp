@@ -57,6 +57,8 @@ class Lego
         double knob_height_ = 0.0017;
         lego_plate assemble_plate_;
         lego_plate storage_plate_;
+        double table_width_ = 0.6985;
+        double table_length_ = 1.219;
         int r1_robot_dof_ = 6;
         int r2_robot_dof_ = 6;
         Eigen::Matrix4d world_base_frame_;
@@ -151,7 +153,9 @@ class Lego
         std::vector<std::string> get_brick_names();
         geometry_msgs::Pose get_init_brick_pose(const std::string& brick_name);
         geometry_msgs::Pose get_curr_brick_pose(const std::string& brick_name);
+        geometry_msgs::Pose get_table_pose();
         void get_brick_sizes(const std::string& brick_name, double& x, double& y, double& z);
+        void get_table_size(double& x, double& y, double& z);
 };
 }
 }

@@ -12,7 +12,7 @@
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
         <param name="output_dir" value="$(find mr_planner)/outputs"/>
         <param name="group_name_0" value="/yk_destroyer" />
-        <param name="group_name_1" value="/sim2" />
+        <param name="group_name_1" value="/yk_architect" />
         <param name="mfi" value="true" />
         <param name="async" value="true" />
         <param name="load_tpg" value="true" />

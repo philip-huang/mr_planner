@@ -1032,6 +1032,20 @@ geometry_msgs::Pose Lego::get_curr_brick_pose(const std::string& brick_name)
     return brick_pose;
 }
 
+geometry_msgs::Pose Lego::get_table_pose()
+{
+    geometry_msgs::Pose table_pose;
+    // get the first robot's x
+    table_pose.position.x = (r1_base_frame_(0, 3) + r2_base_frame_(0, 3)) / 2;
+    table_pose.position.y = 0;
+    table_pose.position.z = storage_plate_.pose(2, 3) - 0.0025;
+    table_pose.orientation.x = 0 ;
+    table_pose.orientation.y = 0;
+    table_pose.orientation.z = 0;
+    table_pose.orientation.w = 1;
+    return table_pose;
+}
+
 void Lego::get_brick_sizes(const std::string& brick_name, double& x, double &y, double& z)
 {
     x = brick_map_[brick_name].height * P_len_;
@@ -1039,6 +1053,13 @@ void Lego::get_brick_sizes(const std::string& brick_name, double& x, double &y, 
     z = brick_height_m_ + knob_height_;
 }
 
+void Lego::get_table_size(double& x, double& y, double& z)
+{
+    x = table_width_;
+    y = table_length_;
+    z = 0.005;
+}
 
 }
+
 }

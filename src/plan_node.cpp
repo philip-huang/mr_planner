@@ -442,8 +442,11 @@ public:
         }
 
         std::vector<std::string> brick_names = lego_ptr_->get_brick_names();
+        addMoveitCollisionObject("table");
+        setCollision("table", "left_arm_link_tool", false);
         for (const auto & name : brick_names) {
             addMoveitCollisionObject(name);
+            setCollision(name, "left_arm_link_tool", false);
         }
 
         return true;
@@ -462,14 +465,20 @@ public:
         primitive.dimensions.resize(3);
 
         double x, y, z;
-        lego_ptr_->get_brick_sizes(name, x, y, z);
+    
+        // define pose relative to frame id
+        geometry_msgs::Pose box_pose;
+        if (name == "table") {
+            lego_ptr_->get_table_size(x, y, z);
+            box_pose = lego_ptr_->get_table_pose();
+        } else {
+            lego_ptr_->get_brick_sizes(name, x, y, z);
+            box_pose = lego_ptr_->get_init_brick_pose(name);
+        }
         primitive.dimensions[primitive.BOX_X] = x; // 2 stud, 1 stud = 7.8mm
         primitive.dimensions[primitive.BOX_Y] = y; // 4 stud
         primitive.dimensions[primitive.BOX_Z] = z; // 1 stud height = 9.6mm + 1.7mm
 
-        // define pose relative to frame id
-        
-        geometry_msgs::Pose box_pose = lego_ptr_->get_init_brick_pose(name);
         ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
 
         co.primitives.push_back(primitive);
