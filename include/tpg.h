@@ -95,6 +95,7 @@ namespace TPG {
         bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const;
         bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
         void update_joint_states(const std::vector<double> &joint_states, int robot_id);
+        void saveStats(const std::string &filename) const;
 
     private:
         int getTotalNodes() const;
@@ -112,7 +113,7 @@ namespace TPG {
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
         bool bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const;
         bool hasCycle() const;
-        void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) const;
+        void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, double &flowtime, double &makespan) const;
         void moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id);
 
         TPGConfig config_;
@@ -128,6 +129,12 @@ namespace TPG {
 
         std::vector<std::vector<double>> joint_states_;
         std::vector<std::unique_ptr<std::atomic_int>> executed_steps_;
+
+        // stats
+        double pre_shortcut_flowtime_ = 0.0;
+        double pre_shortcut_makespan_ = 0.0;
+        double post_shortcut_flowtime_ = 0.0;
+        double post_shortcut_makespan_ = 0.0;
         
     };
 }

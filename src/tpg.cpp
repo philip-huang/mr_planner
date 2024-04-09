@@ -14,6 +14,11 @@ void TPG::reset() {
     num_robots_ = 0;
     joint_states_.clear();
     executed_steps_.clear();
+    pre_shortcut_flowtime_ = 0.0;
+    pre_shortcut_makespan_ = 0.0;
+    post_shortcut_flowtime_ = 0.0;
+    post_shortcut_makespan_ = 0.0;
+        
 }
 
 bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
@@ -61,7 +66,8 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         start_nodes_.push_back(nodes_i[0]);
         end_nodes_.push_back(nodes_i.back());
         numNodes_.push_back(numNodes);
-
+        pre_shortcut_flowtime_ += (dt_ * (numNodes - 1));
+        pre_shortcut_makespan_ = std::max(pre_shortcut_makespan_, dt_ * (numNodes - 1));
     }
 
     // 2. compute collision matrix
@@ -134,7 +140,7 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges in " + std::to_string(t_simplify) + " ms.", 
         LogLevel::HLINFO);
 
-    saveToDotFile("tpg_pre.dot");
+    //saveToDotFile("tpg_pre.dot");
 
     t_start = std::chrono::high_resolution_clock::now();
 
@@ -157,6 +163,14 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         if (config.switch_shortcut) {
             switchShortcuts();
         }
+
+        trajectory_msgs::JointTrajectory joint_traj;
+        size_t num_joints = 0;
+        for (int i = 0; i < num_robots_; i++ ) {
+            num_joints += instance->getRobotDOF(i);
+        }
+        joint_traj.joint_names.resize(num_joints);
+        setSyncJointTrajectory(joint_traj, post_shortcut_flowtime_, post_shortcut_makespan_);
     }
 
     // 5. Print the TPG for debugging purposes
@@ -203,6 +217,12 @@ int TPG::getTotalType2Edges() const {
         }
     }
     return total_edges;
+}
+
+void TPG::saveStats(const std::string &filename) const {
+    std::ofstream file(filename, std::ios::app);
+    file << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ << std::endl;
+    file.close();
 }
 
 void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
@@ -793,7 +813,8 @@ bool TPG::moveit_execute(std::shared_ptr<PlanInstance> instance,
     moveit::planning_interface::MoveGroupInterface::Plan my_plan;
     trajectory_msgs::JointTrajectory &joint_traj = my_plan.trajectory_.joint_trajectory;
     joint_traj.joint_names = move_group->getVariableNames();
-    setSyncJointTrajectory(joint_traj);
+    double flowtime, makespan;
+    setSyncJointTrajectory(joint_traj, flowtime, makespan);
 
     // execute the plan
     move_group->execute(my_plan);
@@ -805,7 +826,8 @@ bool TPG::actionlib_execute(const std::vector<std::string> &joint_names, Traject
     moveit_msgs::ExecuteTrajectoryGoal goal;
     
     goal.trajectory.joint_trajectory.joint_names = joint_names;
-    setSyncJointTrajectory(goal.trajectory.joint_trajectory);
+    double flowtime, makespan;
+    setSyncJointTrajectory(goal.trajectory.joint_trajectory, flowtime, makespan);
 
     auto doneCb = [](const actionlib::SimpleClientGoalState& state,
         const moveit_msgs::ExecuteTrajectoryResultConstPtr& result) {
@@ -824,7 +846,7 @@ bool TPG::actionlib_execute(const std::vector<std::string> &joint_names, Traject
     }
 }
 
-void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) const {
+void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, double &flowtime, double &makespan) const {
     std::vector<std::shared_ptr<Node>> nodes;
     for (int i = 0; i < num_robots_; i++) {
         std::shared_ptr<Node> node_i = start_nodes_[i];
@@ -839,7 +861,7 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
         reached_end.push_back(false);
     }
 
-    int flowtime = 0;
+    int flowtime_i = 0;
     bool allReached = false;
     int j = 0;
     while(!allReached) {
@@ -872,7 +894,7 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
             }
             else if (!reached_end[i]) {
                 reached_end[i] = true;
-                flowtime += j;
+                flowtime_i += j;
             }
         }
 
@@ -883,7 +905,7 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
         j++;
     }
 
-    log("Flowtime: " + std::to_string(flowtime), LogLevel::INFO);
+    log("Flowtime: " + std::to_string(flowtime_i), LogLevel::INFO);
 
     // compute velocities and accelerations with central difference
     for (int i = 1; i < joint_traj.points.size() - 1; i++) {
@@ -892,6 +914,10 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj) c
             joint_traj.points[i].accelerations[j] = (joint_traj.points[i+1].positions[j] - 2 * joint_traj.points[i].positions[j] + joint_traj.points[i-1].positions[j]) / (dt_ * dt_);
         }
     }
+
+    flowtime = flowtime_i * dt_;
+    makespan = (j-1) * dt_;
+    return;
 
 }
 

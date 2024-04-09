@@ -80,6 +80,11 @@ public:
 
     virtual void setRobotDOF(int robot_id, size_t dof);
 
+    virtual size_t getRobotDOF(int robot_id) const {
+        return robot_dof_[robot_id];
+    
+    }
+
 protected:
     int num_robots_;
     std::vector<RobotPose> start_poses_;

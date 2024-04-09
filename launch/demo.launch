@@ -28,6 +28,7 @@
         <param name="shortcut" value="true" />
         <param name="planner_name" value="PrioritizedPlanning" />
         <param name="planning_time_limit" value="4.0" />
+        <param name="benchmark" value="true" />
         <param name="pose_name" value="random1" />
         <param name="pose_name1" value="random2" />
         <param name="pose_name2" value="random3" />
