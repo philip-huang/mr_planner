@@ -8,6 +8,7 @@
 typedef actionlib::SimpleActionClient<moveit_msgs::ExecuteTrajectoryAction> TrajectoryClient;
 
 namespace TPG {
+
     struct TPGConfig {
         bool shortcut = true;
         bool random_shortcut = true;
@@ -88,7 +89,7 @@ namespace TPG {
     public:
         TPG() = default;
         void reset();
-        bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
+        virtual bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
         bool saveToDotFile(const std::string &filename) const;
         bool moveit_execute(std::shared_ptr<PlanInstance> instance, 
             std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
@@ -96,8 +97,29 @@ namespace TPG {
         bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
         void update_joint_states(const std::vector<double> &joint_states, int robot_id);
         void saveStats(const std::string &filename) const;
+        void getSolution(std::vector<RobotTrajectory> &solution) const {
+            solution = solution_;
+        }
 
-    private:
+        std::shared_ptr<Node> getStartNode(int robot_id) const {
+            return (robot_id < start_nodes_.size()) ? start_nodes_[robot_id] : nullptr;
+        }
+
+        std::shared_ptr<Node> getEndNode(int robot_id) const {
+            return (robot_id < end_nodes_.size()) ? end_nodes_[robot_id] : nullptr;
+        }
+
+        int getNumNodes(int robot_id) const {
+            return (robot_id < numNodes_.size()) ? numNodes_[robot_id] : 0;
+        }
+
+        void getSolutionTraj(int robot_id, RobotTrajectory &traj) const {
+            if (robot_id < solution_.size()) {
+                traj = solution_[robot_id];
+            }
+        }
+
+    protected:
         int getTotalNodes() const;
         int getTotalType2Edges() const;
         void getCollisionCheckMatrix(int robot_i, int robot_j, Eigen::MatrixXi &col_matrix) const;
@@ -136,6 +158,71 @@ namespace TPG {
         double post_shortcut_flowtime_ = 0.0;
         double post_shortcut_makespan_ = 0.0;
         
+    };
+
+    struct Activity {
+        friend class boost::serialization::access;
+
+        template<class Archive>
+        void serialize(Archive & ar, const unsigned int version)
+        {
+            ar & robot_id;
+            ar & activity_id;
+            ar & type;
+            ar & type2_deps;
+            ar & type1_dep;
+            ar & start_node;
+            ar & end_node;
+        }
+
+        enum Type {
+            home = 0,
+            pick_tilt_up = 1,
+            pick_up = 2,
+            pick_down = 3,
+            pick_twist = 4,
+            pick_twist_up = 5,
+            drop_tilt_up = 7,
+            drop_up = 8,
+            drop_down = 9,
+            drop_twist = 10,
+            drop_twist_up = 11,
+            support = 13,
+        };
+
+        int robot_id;
+        int activity_id;
+        Type type;
+        std::vector<std::shared_ptr<Activity>> type2_deps;
+        std::shared_ptr<Activity> type1_dep;
+        std::shared_ptr<Node> start_node;
+        std::shared_ptr<Node> end_node;
+    };
+
+    class ADG: public TPG {
+    friend class boost::serialization::access;
+    template <class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & boost::serialization::base_object<TPG>(*this);
+        ar & activities_;
+    }
+    public:
+        ADG(int num_robots);
+        
+        void add_activity(int robot_id, Activity::Type type);
+
+        void add_activity(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep);
+    
+        void add_trajectory(int robot_id, int activity_id, const RobotTrajectory &trajectory);
+
+        bool init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, const std::vector<std::shared_ptr<TPG>> &tpgs);
+
+        std::shared_ptr<Activity> get_activity(int robot_id, int activity_id);
+        std::shared_ptr<Activity> get_last_activity(int robot_id, Activity::Type type);
+
+    private:
+        std::vector<std::vector<std::shared_ptr<Activity>>> activities_;
     };
 }
 

@@ -270,12 +270,15 @@ public:
         return success;
     }
 
-    void reset_joint_states_flag(std::shared_ptr<TPG::TPG> tpg) {
+    void set_tpg(std::shared_ptr<TPG::TPG> tpg) {
         tpg_ = tpg;
+    }
+
+    void reset_joint_states_flag() {
         left_arm_joint_state_received = false;
         right_arm_joint_state_received = false;
         while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
-            ros::Duration(0.1).sleep();
+            ros::Duration(0.01).sleep();
         }
     }
 
@@ -684,9 +687,10 @@ public:
         for (size_t i = 0; i < 6; i++) {
             current_joints_[i] = msg->position[i];
         }
+        left_arm_joint_state_received = true;
+
         if (tpg_ != nullptr) {
             tpg_->update_joint_states(msg->position, 0);
-            left_arm_joint_state_received = true;
         }
 
     }
@@ -695,9 +699,10 @@ public:
         for (size_t i = 0; i < 6; i++) {
             current_joints_[7+i] = msg->position[i];
         }
+        right_arm_joint_state_received = true;
+
         if (tpg_ != nullptr) {
             tpg_->update_joint_states(msg->position, 1);
-            right_arm_joint_state_received = true;
         }
         
     }
@@ -707,15 +712,25 @@ public:
             current_joints_[i] = msg->position[i];
             current_joints_[7+i] = msg->position[7+i];
         }
+        left_arm_joint_state_received = true;
+        right_arm_joint_state_received = true;
+
         std::vector<double> left_joints(msg->position.begin(), msg->position.begin()+7);
         std::vector<double> right_joints(msg->position.begin()+7, msg->position.begin()+14);
         if (tpg_ != nullptr) {
             tpg_->update_joint_states(left_joints, 0);
             tpg_->update_joint_states(right_joints, 1);
-            left_arm_joint_state_received = true;
-            right_arm_joint_state_received = true;
+
         }
 
+    }
+
+    std::shared_ptr<PlanInstance> getInstance() {
+        return instance_;
+    }
+
+    std::shared_ptr<TPG::TPG> getTPG() {
+        return tpg_;
     }
 
 
@@ -771,11 +786,12 @@ private:
 int main(int argc, char** argv) {
     ros::init(argc, argv, "dual_arm_joint_space_planner");
     
+    // start ros node
     ros::NodeHandle nh("~");
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
-
+    // Read ROS Params
     std::string file_path, planner_type, config_fname, root_pwd, output_dir;
     bool async = false;
     bool mfi = false;
@@ -786,7 +802,6 @@ int main(int argc, char** argv) {
             nh.getParam("group_name_" + std::to_string(i), group_names[i]);
        }
     }
-    //retrieve the file path as ros param
     nh.getParam("fullorder_targets_filename", file_path);
     nh.getParam("planner_type", planner_type);
     nh.param<std::string>("config_fname", config_fname, "");
@@ -796,6 +811,7 @@ int main(int argc, char** argv) {
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
 
+    // Initialize the DUal Arm Planner
     setLogLevel(LogLevel::INFO);
 
     TPG::TPGConfig tpg_config;
@@ -819,44 +835,92 @@ int main(int argc, char** argv) {
     planner.setup_once();
     ROS_INFO("Execution setup done");
 
+    // Start Execution Loop
+    auto adg = std::make_shared<TPG::ADG>(2);
+    std::vector<std::shared_ptr<TPG::TPG>> tpgs;
     int mode = 1;
     int task_idx = 1;
     std::string brick_name;
     std::string last_brick_name = "b2_5"; // TODO: fix this hardcoding
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
+
+        if (mode == 0 || mode == 6) {
+            adg->add_activity(0, TPG::Activity::Type::home);
+            adg->add_activity(1, TPG::Activity::Type::home);
+            planner.setCollision("table", "left_arm_link_tool", false);
+        }
         if (mode == 1) {
+            adg->add_activity(0, TPG::Activity::Type::pick_tilt_up);
+            adg->add_activity(1, TPG::Activity::Type::home);
             planner.getLegoBrickName(task_idx, brick_name);
             planner.setCollision(brick_name, "left_arm_link_tool", true);
         }
+        if (mode == 2) {
+            adg->add_activity(0, TPG::Activity::Type::pick_up);
+            adg->add_activity(1, TPG::Activity::Type::home);
+        }
+        if (mode == 3) {
+            adg->add_activity(0, TPG::Activity::Type::pick_down);
+            adg->add_activity(1, TPG::Activity::Type::home);
+        }
         if (mode == 4) {
             ROS_INFO("attach lego to robot 0");
+            adg->add_activity(0, TPG::Activity::Type::pick_twist);
+            adg->add_activity(1, TPG::Activity::Type::home);
             planner.attachMoveitCollisionObject(brick_name, "left_arm_link_tool");
+            planner.setCollision("table", "left_arm_link_tool", true);
+        }
+        if (mode == 5) {
+            adg->add_activity(0, TPG::Activity::Type::pick_twist_up);
+            adg->add_activity(1, TPG::Activity::Type::home);
+        }
+        if (mode == 7) {
+            adg->add_activity(0, TPG::Activity::Type::drop_tilt_up);
+            adg->add_activity(1, TPG::Activity::Type::home);
+        }
+        if (mode == 8) {
+            adg->add_activity(0, TPG::Activity::Type::drop_up);
+            adg->add_activity(1, TPG::Activity::Type::support);
         }
         if (mode == 9) {
+            adg->add_activity(0, TPG::Activity::Type::drop_down, adg->get_last_activity(1, TPG::Activity::Type::support));
+            adg->add_activity(1, TPG::Activity::Type::support);
             planner.setCollision(last_brick_name, brick_name, true);
             last_brick_name = brick_name;
         }
         if (mode == 10) {
             ROS_INFO("detach lego from robot 0");
+            adg->add_activity(0, TPG::Activity::Type::drop_twist);
+            adg->add_activity(1, TPG::Activity::Type::support);
             planner.detachMoveitCollisionObject(brick_name);
         }
+        if (mode == 11) {
+            adg->add_activity(0, TPG::Activity::Type::drop_twist_up);
+            adg->add_activity(1, TPG::Activity::Type::support);
+        }
         if (mode == 12) {
+            adg->add_activity(0, TPG::Activity::Type::home);
+            adg->add_activity(1, TPG::Activity::Type::home, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
             planner.setCollision(brick_name, "left_arm_link_tool", false);
         }
 
         ROS_INFO("mode %d, task_id: %d, use robot 1: %d, use robot 2: %d", mode, task_idx, poses[0].use_robot, poses[1].use_robot);
-        //planner.checkFK(poses);
         if (load_tpg) {
             std::shared_ptr<TPG::TPG> tpg = planner.loadTPG(output_dir + "/tpg_" + std::to_string(i) + ".txt");
             if (tpg != nullptr) {
-                planner.reset_joint_states_flag(tpg);
+                planner.set_tpg(tpg);
+                planner.reset_joint_states_flag(); // do this after tpg is set
                 planner.execute(tpg);
             }
         }
         else {
+            planner.reset_joint_states_flag();
             planner.planAndMove(poses, tpg_config);
         }
+
+        std::shared_ptr<TPG::TPG> tpg = planner.getTPG(); 
+        tpgs.push_back(tpg);
 
         mode ++;
         if (mode == 13) {
@@ -865,6 +929,17 @@ int main(int argc, char** argv) {
         }
     }
     
+    // create and save the adg
+    adg->init(planner.getInstance(), tpg_config, tpgs);
+    std::ofstream ofs(output_dir + "/adg.txt");
+    if (!ofs.is_open()) {
+        ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
+        return false;
+    }
+    boost::archive::text_oarchive oa(ofs);
+    oa << adg;
+    // planner.reset_joint_states_flag();
+    // planner.execute(adg);
 
     ros::shutdown();
     return 0;
