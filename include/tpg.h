@@ -13,6 +13,7 @@ namespace TPG {
         bool shortcut = true;
         bool random_shortcut = true;
         bool ignore_far_collisions = false;
+        bool helpful_shortcut = true;
         double random_shortcut_time = 1;
         double dt = 0.1;
         double switch_shortcut = false;
@@ -127,6 +128,8 @@ namespace TPG {
         void transitiveReduction();
         void findShortcuts(std::shared_ptr<PlanInstance> instance);
         void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
+        void findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end);
+        void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         bool checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void switchShortcuts();

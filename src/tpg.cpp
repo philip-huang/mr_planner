@@ -126,19 +126,20 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         }
     }
 
-    int numtype2edges = getTotalType2Edges();
-    log("TPG initialized with "  + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", 
-        LogLevel::HLINFO);
-
     // 4. Simplify the edges with MCP algorithm
     auto t_start = std::chrono::high_resolution_clock::now();
     
     transitiveReduction();
+    if (hasCycle()) {
+        log("Naive TPG already has cycle", LogLevel::ERROR);
+        return false;
+    }
     
-    numtype2edges = getTotalType2Edges();
+    int numtype2edges = getTotalType2Edges();
     double t_simplify = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();  
-    log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges in " + std::to_string(t_simplify) + " ms.", 
+    log("TPG initialized with "  + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", 
         LogLevel::HLINFO);
+
 
     //saveToDotFile("tpg_pre.dot");
 
@@ -152,17 +153,17 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         }
 
         double t_shortcut = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+                
+        transitiveReduction();
         numtype2edges = getTotalType2Edges();
         log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
         log ("in " + std::to_string(t_shortcut) + " ms.", LogLevel::HLINFO);
-        
-        transitiveReduction();
-        numtype2edges = getTotalType2Edges();
-        log("TPG simplified to " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
 
         if (config.switch_shortcut) {
             switchShortcuts();
         }
+
+        //saveToDotFile("tpg.dot");
 
         trajectory_msgs::JointTrajectory joint_traj;
         size_t num_joints = 0;
@@ -263,11 +264,7 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
 }
 
 void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit) {
-    int numType2Edges = getTotalType2Edges();
-    if (numType2Edges == 0) {
-        return;
-    }
-    
+
     // randomly sample shortcuts and check if they are valid for time
     double elapsed = 0;
     auto tic = std::chrono::high_resolution_clock::now();
@@ -275,6 +272,8 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         int i = std::rand() % num_robots_;
         int startNode = std::rand() % numNodes_[i];
         if (startNode >= numNodes_[i] - 2) {
+            auto toc = std::chrono::high_resolution_clock::now();
+            elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
             continue;
         }
         int length = std::rand() % (numNodes_[i] - startNode - 2) + 2;
@@ -288,6 +287,36 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         for (int j = 0; j < length; j++) {
             node_j = node_j->Type1Next;
             assert(node_j != nullptr);
+        }
+
+        if (config_.helpful_shortcut) {
+            bool helpful = false;
+            std::shared_ptr <Node> current = node_i->Type1Next;
+            while (!helpful && current != node_j) {
+                if (current->Type2Next.size() > 0) {
+                    helpful = true;
+                }
+                current = current->Type1Next;
+            }
+            current = node_j;
+            while (!helpful && current != nullptr) {
+                if (current->Type2Prev.size() > 0) {
+                    for (auto edge : current->Type2Prev) {
+                        if (edge.nodeFrom->timeStep >= current->timeStep) {
+                            break;
+                        }
+                    }
+                }
+                if (current->Type2Next.size() > 0) {
+                    helpful = true;
+                }
+                current = current->Type1Next;
+            }
+            if (!helpful && (current != nullptr)) {
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
+            }
         }
 
         std::vector<Eigen::MatrixXi> col_matrix;
@@ -310,6 +339,8 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
     }
 
+    std::cout << "after random shortcuts ";
+    std::cout << hasCycle() << std::endl;
 }
 
 bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
@@ -409,12 +440,16 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
 void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
         const std::vector<RobotPose> &shortcut_path, const std::vector<Eigen::MatrixXi> &col_matrix) {
     
-    std::shared_ptr<Node> n_prev = ni;
+    std::shared_ptr<Node> n_prev = ni->Type1Next;
     // remove dangling type-2 edge skipped by the shortcut
-    while (n_prev != nj) {
+    while (n_prev != nullptr && n_prev != nj) {
         for (auto edge : n_prev->Type2Next) {
             edge.nodeTo->Type2Prev.erase(std::remove_if(edge.nodeTo->Type2Prev.begin(), edge.nodeTo->Type2Prev.end(), 
                 [edge](const type2Edge &element) {return element.edgeId == edge.edgeId;}), edge.nodeTo->Type2Prev.end());
+        }
+        for (auto edge : n_prev->Type2Prev) {
+            edge.nodeFrom->Type2Next.erase(std::remove_if(edge.nodeFrom->Type2Next.begin(), edge.nodeFrom->Type2Next.end(), 
+                [edge](const type2Edge &element) {return element.edgeId == edge.edgeId;}), edge.nodeFrom->Type2Next.end());
         }
         n_prev = n_prev->Type1Next;
     }
@@ -659,6 +694,108 @@ bool TPG::dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<st
     return false;
 }
 
+void TPG::findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end)
+{
+    reached_t.clear();
+    reached_end.clear();
+    std::vector<std::shared_ptr<Node>> nodes;
+    for (int i = 0; i < num_robots_; i++) {
+        std::shared_ptr<Node> node_i = start_nodes_[i];
+        nodes.push_back(node_i);
+
+        std::vector<int> v(numNodes_[i], -1);
+        reached_t.push_back(v);
+        reached_end.push_back(-1);
+    }
+
+    int flowtime_i = 0;
+    bool allReached = false;
+    int j = 0;
+    while(!allReached) {
+
+        for (int i = 0; i < num_robots_; i++) {
+            if (reached_t[i][nodes[i]->timeStep] == -1) {
+                reached_t[i][nodes[i]->timeStep] = j;
+            }
+        }
+        for (int i = 0; i < num_robots_; i++) {
+            if (nodes[i]->Type1Next != nullptr) {
+                bool safe = true;
+                for (auto edge : nodes[i]->Type1Next->Type2Prev) {
+                    if (reached_t[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] == -1) {
+                        safe = false;
+                        break;
+                    }
+                }
+                if (safe) {
+                    nodes[i] = nodes[i]->Type1Next;
+                }
+            }
+            else if (reached_end[i] == -1) {
+                reached_end[i] = j;
+                flowtime_i += j;
+            }
+        }
+
+        allReached = true;
+        for (int i = 0; i < num_robots_; i++) {
+            allReached &= (reached_end[i] != -1);
+        }
+        j++;
+    }
+
+}
+
+void TPG::findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end)
+{
+    reached_t.clear();
+    std::vector<std::shared_ptr<Node>> nodes;
+    int j = 0;
+    for (int i = 0; i < num_robots_; i++) { 
+        std::shared_ptr<Node> node_i = end_nodes_[i];
+        nodes.push_back(node_i);
+
+        std::vector<int> v(numNodes_[i], -1);
+        v.back() = reached_end[i];
+        reached_t.push_back(v);
+        j = std::max(j, reached_end[i]);
+    }
+
+    bool allReached = false;
+
+    while (!allReached) {
+        for (int i = 0; i < num_robots_; i++) {
+
+            if (reached_t[i][nodes[i]->timeStep] == -1) {
+                reached_t[i][nodes[i]->timeStep] = j;
+            }
+            else if (reached_t[i][nodes[i]->timeStep] < j) {
+                continue; // wait at the end node until time reach_time[i][node[i]->timeStep]
+            }
+        }
+
+        for (int i = 0; i < num_robots_; i++) {
+            if (nodes[i]->Type1Prev != nullptr) {
+                bool safe = true;
+                for (auto edge : nodes[i]->Type1Prev->Type2Next) {
+                    if (reached_t[edge.nodeTo->robotId][edge.nodeTo->timeStep] == -1) {
+                        safe = false;
+                        break;
+                    }
+                }
+                if (safe) {
+                    nodes[i] = nodes[i]->Type1Prev;
+                }
+            }
+        }
+        allReached = true;
+        for (int i = 0; i < num_robots_; i++) {
+            allReached &= (reached_t[i][0] != -1);
+        }
+        j--;
+    }
+}
+
 bool TPG::bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const
 {
     // BFS function to find all the dependent nodes of ni
@@ -791,8 +928,8 @@ bool TPG::saveToDotFile(const std::string& filename) const {
     for (int i = 0; i < num_robots_; i++) {
         std::shared_ptr<Node> node_i = start_nodes_[i];
         while (node_i != nullptr) {
-            for (auto edge : node_i->Type2Next) {
-                out << "n" << i << "_" << node_i->timeStep << " -> " << "n" << edge.nodeTo->robotId << "_" << edge.nodeTo->timeStep << ";" << std::endl;
+            for (auto edge : node_i->Type2Prev) {
+                out << "n" << edge.nodeFrom->robotId << "_" << edge.nodeFrom->timeStep << " -> " << "n" << i << "_" << node_i->timeStep << ";" << std::endl;
             }
             node_i = node_i->Type1Next;
         }
@@ -879,6 +1016,8 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, d
                 joint_traj.points[j].positions[i*7 + d] = pose_j_t.joint_values[d];
             }
             reached[i][nodes[i]->timeStep] = true;
+        }
+        for (int i = 0; i < num_robots_; i++) {
 
             if (nodes[i]->Type1Next != nullptr) {
                 bool safe = true;
@@ -905,7 +1044,8 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, d
         j++;
     }
 
-    log("Flowtime: " + std::to_string(flowtime_i), LogLevel::INFO);
+    flowtime = flowtime_i * dt_;
+    makespan = (j-1) * dt_;
 
     // compute velocities and accelerations with central difference
     for (int i = 1; i < joint_traj.points.size() - 1; i++) {
@@ -915,8 +1055,6 @@ void TPG::setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, d
         }
     }
 
-    flowtime = flowtime_i * dt_;
-    makespan = (j-1) * dt_;
     return;
 
 }

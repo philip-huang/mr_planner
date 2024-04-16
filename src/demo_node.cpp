@@ -142,10 +142,13 @@ public:
                     double planning_time_limit,
                     bool async,
                     bool mfi,
-                    bool benchmark) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
+                    bool benchmark,
+                    const std::string &benchmark_fname) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
                 kinematic_state(kinematic_state), group_names(group_names), async(async),
                 planning_time_limit(planning_time_limit), mfi(mfi), planner_name(planner_name),
-                benchmark(benchmark) { }
+                benchmark(benchmark), benchmark_fname(benchmark_fname) {
+                    num_robots = group_names.size();
+                 }
 
     void setup_once() {
         /*
@@ -158,11 +161,10 @@ public:
 
         if (benchmark) {
             current_joints = move_group->getCurrentJointValues();
-            std::ostringstream filename;
-            auto now = std::chrono::system_clock::now();
-            auto now_time_t = std::chrono::system_clock::to_time_t(now);
-            filename << "stats_" << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S") << ".csv";
-            benchmark_fname = filename.str();
+            // clear the benchmark file
+            std::ofstream ofs(benchmark_fname, std::ofstream::out);
+            ofs << "flowtime_pre, makespan_pre, flowtime_post, makespan_post" << std::endl;
+            ofs.close();
         }
         else if (mfi) {
             std::vector<std::string> names;
@@ -176,8 +178,8 @@ public:
             joint_names_split.push_back(names);
             current_joints.resize(14, 0.0);
            
-            left_arm_sub = nh.subscribe(group_names[0] + "/joint_states", 1, &TestPPPlanning::left_arm_joint_state_cb, this);
-            right_arm_sub = nh.subscribe(group_names[1] + "/joint_states", 1, &TestPPPlanning::right_arm_joint_state_cb, this);
+            left_arm_sub = nh.subscribe("/" + group_names[0] + "/joint_states", 1, &TestPPPlanning::left_arm_joint_state_cb, this);
+            right_arm_sub = nh.subscribe("/" + group_names[1] + "/joint_states", 1, &TestPPPlanning::right_arm_joint_state_cb, this);
 
             while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
                 ros::Duration(0.1).sleep();
@@ -201,16 +203,16 @@ public:
 
     void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
         auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
-        instance->setNumberOfRobots(2);
-        instance->setRobotNames({"left_arm", "right_arm"});
-        instance->setRobotDOF(0, 7);
-        instance->setRobotDOF(1, 7);
-
+        instance->setNumberOfRobots(num_robots);
+        instance->setRobotNames(group_names);
+        for (int i = 0; i < num_robots; i++) {
+            instance->setRobotDOF(i, 7);
+        }
         /*
         Set the start and goal poses for planner instance
         */
         std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < num_robots; i++) {
             std::vector<double> start_pose(7, 0.0);
             std::vector<double> goal_pose(7, 0.0);
             for (size_t j = 0; j < 7; j++) {
@@ -253,8 +255,10 @@ public:
         Build the TPG
         */
         tpg.reset();
-        tpg.init(instance, solution, tpg_config);
-        //tpg.saveToDotFile("tpg.dot");
+        bool success = tpg.init(instance, solution, tpg_config);
+        if (!success) {
+            return;
+        }
 
         /*
         * Execute the plan
@@ -262,7 +266,7 @@ public:
         if (benchmark) {
             tpg.saveStats(benchmark_fname);
 
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < num_robots; i++) {
                 for (size_t j = 0; j < 7; j++) {
                     current_joints[i*7+j] = goal_joints[joint_names[i*7+j]];
                 }
@@ -317,6 +321,7 @@ private:
     robot_state::RobotStatePtr kinematic_state;
     ros::Subscriber left_arm_sub, right_arm_sub, dual_arm_sub;
 
+    int num_robots;
     std::string pose_name;
     std::string planner_name;
     std::string benchmark_fname;
@@ -345,8 +350,58 @@ int main(int argc, char** argv) {
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
-    // Declare the MoveGroupInterface
+    // read parameters
+    int num_robots = 2;
+    if (nh_private.hasParam("num_robots")) {
+        nh_private.getParam("num_robots", num_robots);
+    }
+    std::vector<std::string> group_names = {"left_arm", "right_arm"};
+    group_names.resize(num_robots);
+    for (int i = 0; i < num_robots; i++) {
+        if (nh_private.hasParam("group_name_" + std::to_string(i))) {
+            nh_private.getParam("group_name_" + std::to_string(i), group_names[i]);
+        }
+    }
+
+    bool async = true;
+    bool mfi = true;
+    bool shortcut = true;
+    bool benchmark = true;
+    double planning_time_limit = 2.0;
+    std::string pose_name = "left_push_up";
     std::string movegroup_name = "dual_arms";
+    std::string planner_name = "PrioritizedPlanning";
+    std::string benchmark_fname = "stats.csv";
+    if (nh_private.hasParam("mfi")) {
+        nh_private.getParam("mfi", mfi);
+    }
+    if (nh_private.hasParam("async")) {
+        nh_private.getParam("async", async);
+    }
+    if (nh_private.hasParam("pose_name")) {
+        nh_private.getParam("pose_name", pose_name);
+    }
+    if (nh_private.hasParam("planner_name")) {
+        nh_private.getParam("planner_name", planner_name);
+    }
+    if (nh_private.hasParam("planning_time_limit")) {
+        nh_private.getParam("planning_time_limit", planning_time_limit);
+        std::cout << "Planning time limit: " << planning_time_limit << std::endl;
+    }
+    if (nh_private.hasParam("shortcut")) {
+        nh_private.getParam("shortcut", shortcut);
+    }
+    if (nh_private.hasParam("benchmark")) {
+        nh_private.getParam("benchmark", benchmark);
+    }
+    if (nh_private.hasParam("movegroup_name")) {
+        nh_private.getParam("movegroup_name", movegroup_name);
+    }
+    if (nh_private.hasParam("output_file")) {
+        nh_private.getParam("output_file", benchmark_fname);
+    }
+
+    // Declare the MoveGroupInterface
     auto move_group = std::make_shared<moveit::planning_interface::MoveGroupInterface>(movegroup_name);
 
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface;
@@ -373,51 +428,17 @@ int main(int argc, char** argv) {
 
     // test_planning(*move_group);
 
-    std::vector<std::string> group_names = {"left_arm", "right_arm"};
-    for (int i = 0; i < 2; i++) {
-        if (nh_private.hasParam("group_name_" + std::to_string(i))) {
-            nh_private.getParam("group_name_" + std::to_string(i), group_names[i]);
-       }
-    }
-
-    bool async = true;
-    bool mfi = true;
-    bool shortcut = true;
-    bool benchmark = true;
-    double planning_time_limit = 2.0;
-    std::string pose_name = "left_push_up";
-    std::string planner_name = "PrioritizedPlanning";
-    if (nh_private.hasParam("mfi")) {
-        nh_private.getParam("mfi", mfi);
-    }
-    if (nh_private.hasParam("async")) {
-        nh_private.getParam("async", async);
-    }
-    if (nh_private.hasParam("pose_name")) {
-        nh_private.getParam("pose_name", pose_name);
-    }
-    if (nh_private.hasParam("planner_name")) {
-        nh_private.getParam("planner_name", planner_name);
-    }
-    if (nh_private.hasParam("planning_time_limit")) {
-        nh_private.getParam("planning_time_limit", planning_time_limit);
-        std::cout << "Planning time limit: " << planning_time_limit << std::endl;
-    }
-    if (nh_private.hasParam("shortcut")) {
-        nh_private.getParam("shortcut", shortcut);
-    }
-    if (nh_private.hasParam("benchmark")) {
-        nh_private.getParam("benchmark", benchmark);
-    }
-
     auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, 
-        planner_name, planning_time_limit, async, mfi, benchmark);
+        planner_name, planning_time_limit, async, mfi, benchmark, benchmark_fname);
     pp_tester.setup_once();
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
-    tpg_config.random_shortcut_time = 1;
-    tpg_config.ignore_far_collisions = true;
+    tpg_config.random_shortcut_time = 0.1;
+    tpg_config.ignore_far_collisions = false;
     tpg_config.shortcut = shortcut;
+    if (nh_private.hasParam("random_shortcut_time")) {
+        nh_private.getParam("random_shortcut_time", tpg_config.random_shortcut_time);
+    }
 
     std::vector<std::string> pose_names = {pose_name};
     for (int i=1; ; i++ ) {
