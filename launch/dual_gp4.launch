@@ -3,6 +3,7 @@
     <!-- Gazebo options -->
     <arg name="use_rviz" default="true" />
     <arg name="benchmark" default="false" />
+    <arg name="demo" default="true" />
 
     <!-- Start the robot state publisher, simulation, and controler -->
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
@@ -21,7 +22,25 @@
     </node>
 
     <!-- Start the demo test node -->
-    <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true">
+    <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true" if="$(arg demo)">
+        <param name="num_robots" value="2" />
+        <param name="movegroup_name" value="dual_arms" />
+        <param name="group_name_0" value="left_arm" />
+        <param name="group_name_1" value="right_arm" />
+        <param name="mfi" value="false" />
+        <param name="async" value="false" />
+        <param name="shortcut" value="true" />
+        <param name="random_shortcut_time" value="1" />
+        <param name="planner_name" value="PrioritizedPlanning" />
+        <param name="planning_time_limit" value="4.0" />
+        <param name="benchmark" value="false" />
+        <param name="output_file" value="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
+
+        <param name="pose_name" value="left_push_up" />
+        <param name="pose_name1" value="ready_pose" />
+    </node>
+
+    <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true" unless="$(arg demo)">
         <param name="num_robots" value="2" />
         <param name="movegroup_name" value="dual_arms" />
         <param name="group_name_0" value="left_arm" />
