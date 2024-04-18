@@ -21,6 +21,15 @@ def average_improvement(df, out_df=None):
     return avg_flowtime_improvement_perc, avg_makespan_improvement_perc
 
 # Calculate the average improvements
-df = pd.read_csv("../outputs/dual_gp4_benchmark.csv", sep=', ')
 
-print(average_improvement(df, out_df="../outputs/dual_gp4_benchmark_avg.csv"))
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--input", required=True, help="path to input csv file")
+    ap.add_argument("-o", "--output", required=False, help="path to output csv file")
+    args = ap.parse_args()
+
+    df = pd.read_csv(args.input, sep=', ')
+    print(df.columns)
+
+    print(average_improvement(df, out_df=args.output))

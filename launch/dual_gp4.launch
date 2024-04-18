@@ -3,7 +3,10 @@
     <!-- Gazebo options -->
     <arg name="use_rviz" default="true" />
     <arg name="benchmark" default="false" />
-    <arg name="demo" default="true" />
+    <arg name="demo" default="false" />
+    <arg name="random_shortcut_time" default="0.1" />
+    <arg name="tight_shortcut" default="true" />
+    <arg name="output_file" default="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
 
     <!-- Start the robot state publisher, simulation, and controler -->
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
@@ -30,14 +33,13 @@
         <param name="mfi" value="false" />
         <param name="async" value="false" />
         <param name="shortcut" value="true" />
-        <param name="random_shortcut_time" value="1" />
-        <param name="planner_name" value="PrioritizedPlanning" />
+        <param name="tight_shortcut" value="true" />
+        <param name="random_shortcut_time" value="0.1" />
+        <param name="planner_name" value="RRTConnect" />
         <param name="planning_time_limit" value="4.0" />
         <param name="benchmark" value="false" />
-        <param name="output_file" value="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
 
-        <param name="pose_name" value="left_push_up" />
-        <param name="pose_name1" value="ready_pose" />
+        <param name="pose_name" value="left_push" />
     </node>
 
     <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true" unless="$(arg demo)">
@@ -48,11 +50,12 @@
         <param name="mfi" value="false" />
         <param name="async" value="false" />
         <param name="shortcut" value="true" />
-        <param name="random_shortcut_time" value="1" />
+        <param name="random_shortcut_time" value="$(arg random_shortcut_time)" />
+        <param name="tight_shortcut" value="$(arg tight_shortcut)" />
         <param name="planner_name" value="RRTConnect" />
         <param name="planning_time_limit" value="4.0" />
         <param name="benchmark" value="$(arg benchmark)" />
-        <param name="output_file" value="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
+        <param name="output_file" value="$(arg output_file)" />
 
         <param name="pose_name" value="random1" />
         <param name="pose_name1" value="random2" />

@@ -436,8 +436,12 @@ int main(int argc, char** argv) {
     tpg_config.random_shortcut_time = 0.1;
     tpg_config.ignore_far_collisions = false;
     tpg_config.shortcut = shortcut;
+    tpg_config.tight_shortcut = true;
     if (nh_private.hasParam("random_shortcut_time")) {
         nh_private.getParam("random_shortcut_time", tpg_config.random_shortcut_time);
+    }
+    if (nh_private.hasParam("tight_shortcut")) {
+        nh_private.getParam("tight_shortcut", tpg_config.tight_shortcut);
     }
 
     std::vector<std::string> pose_names = {pose_name};

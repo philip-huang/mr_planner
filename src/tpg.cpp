@@ -268,6 +268,16 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
     // randomly sample shortcuts and check if they are valid for time
     double elapsed = 0;
     auto tic = std::chrono::high_resolution_clock::now();
+    
+    std::vector<std::vector<int>> earliest_t, latest_t;
+    std::vector<int> reached_end;
+    if (config_.tight_shortcut) {
+        findEarliestReachTime(earliest_t, reached_end);
+        findLatestReachTime(latest_t, reached_end);
+        findTightType2Edges(earliest_t, latest_t);
+    }
+
+    
     while (elapsed < runtime_limit) {
         int i = std::rand() % num_robots_;
         int startNode = std::rand() % numNodes_[i];
@@ -319,6 +329,32 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
             }
         }
 
+        if (config_.tight_shortcut) {
+            std::shared_ptr<Node> current = node_i->Type1Next;
+            bool has_tight_type2_edge = false;
+            bool all_tight_type1_edge = (earliest_t[i][node_i->timeStep] == latest_t[i][node_i->timeStep]);
+            while (current != node_j) {
+                if (earliest_t[i][current->timeStep] < latest_t[i][current->timeStep]) {
+                    all_tight_type1_edge = false;
+                }
+                for (auto edge : current->Type2Prev) {
+                    // std::cout << "tight type 2 edge from robot " << edge.nodeFrom->robotId << " at time " 
+                    //     << edge.nodeFrom->timeStep << " to robot " << edge.nodeTo->robotId << " at time " 
+                    //     << edge.nodeTo->timeStep << " is " << ((edge.tight) ? "tight" : "loose") << std::endl;
+                    if (edge.tight) {
+                        has_tight_type2_edge = true;
+                        break;
+                    }
+                }
+                current = current->Type1Next;
+            }
+            if (!has_tight_type2_edge && !all_tight_type1_edge) {
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
+            }
+        }
+
         std::vector<Eigen::MatrixXi> col_matrix;
         std::vector<RobotPose> shortcut_path;
 
@@ -333,6 +369,11 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
             log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
             
             updateTPG(node_i, node_j, shortcut_path, col_matrix);
+            if (config_.tight_shortcut) {
+                findEarliestReachTime(earliest_t, reached_end);
+                findLatestReachTime(latest_t, reached_end);
+                findTightType2Edges(earliest_t, latest_t);
+            }
         }
 
         auto toc = std::chrono::high_resolution_clock::now();
@@ -744,6 +785,15 @@ void TPG::findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::v
         j++;
     }
 
+    // print all the reached times
+    // std::cout << "Earliest reach time:\n";
+    // for (int i = 0; i < num_robots_; i++) {
+    //     for (int j = 0; j < numNodes_[i]; j++) {
+    //         std::cout << reached_t[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+
 }
 
 void TPG::findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end)
@@ -769,13 +819,10 @@ void TPG::findLatestReachTime(std::vector<std::vector<int>> &reached_t, const st
             if (reached_t[i][nodes[i]->timeStep] == -1) {
                 reached_t[i][nodes[i]->timeStep] = j;
             }
-            else if (reached_t[i][nodes[i]->timeStep] < j) {
-                continue; // wait at the end node until time reach_time[i][node[i]->timeStep]
-            }
         }
 
         for (int i = 0; i < num_robots_; i++) {
-            if (nodes[i]->Type1Prev != nullptr) {
+            if ((reached_t[i][nodes[i]->timeStep] >= j) && (nodes[i]->Type1Prev != nullptr)) {
                 bool safe = true;
                 for (auto edge : nodes[i]->Type1Prev->Type2Next) {
                     if (reached_t[edge.nodeTo->robotId][edge.nodeTo->timeStep] == -1) {
@@ -793,6 +840,44 @@ void TPG::findLatestReachTime(std::vector<std::vector<int>> &reached_t, const st
             allReached &= (reached_t[i][0] != -1);
         }
         j--;
+    }
+    
+    // print all the reached times
+    // std::cout << "Latest reach time:\n";
+    // for (int i = 0; i < num_robots_; i++) {
+    //     for (int j = 0; j < numNodes_[i]; j++) {
+    //         std::cout << reached_t[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+}
+
+void TPG::findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t)
+{
+    for (int i = 0; i < num_robots_; i++) {
+        std::shared_ptr<Node> node = start_nodes_[i];
+
+        while (node->Type1Next != nullptr) {
+            int dt = earliest_t[i][node->Type1Next->timeStep] - earliest_t[i][node->timeStep];
+    
+            for (auto &edge : node->Type1Next->Type2Prev) {
+                edge.tight = false;
+            }
+    
+            if (dt > 1) {
+                for (auto &edge : node->Type1Next->Type2Prev) {
+                    int t_edge_start = earliest_t[edge.nodeFrom->robotId][edge.nodeFrom->timeStep];
+                    int dt_edge = earliest_t[i][node->Type1Next->timeStep] - t_edge_start;
+                    if (dt_edge == 1) {
+                        edge.tight = true;
+                    }
+                    else {
+                        edge.tight = false;
+                    }
+                }
+            }
+            node = node->Type1Next;
+        }
     }
 }
 
