@@ -1,49 +1,53 @@
 <?xml version="1.0"?>
 <launch>
     <!-- Gazebo options -->
+    <arg name="ns" default="" />
     <arg name="use_rviz" default="true" />
     <arg name="benchmark" default="false" />
     <arg name="random_shortcut_time" default="0.1" />
     <arg name="tight_shortcut" default="true" />
     <arg name="output_file" default="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
 
-    <!-- Start the robot state publisher, simulation, and controler -->
-    <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
-    </include> -->
+    <group ns="$(arg ns)">
 
-    <include file="$(find panda_four_moveit_config)/launch/demo.launch">
-        <arg name="use_rviz" value="$(arg use_rviz)" />
-    </include>
+        <!-- Start the robot state publisher, simulation, and controler -->
+        <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
+        </include> -->
 
-    <!-- Start the demo test node -->
-    <node launch-prefix="xterm -e gdb --args" name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true">
-        <param name="num_robots" value="4" />
-        <param name="movegroup_name" value="panda_multi_arm" />
-        <param name="group_name_0" value="panda0_arm" />
-        <param name="group_name_1" value="panda1_arm" />
-        <param name="group_name_2" value="panda2_arm" />
-        <param name="group_name_3" value="panda3_arm" />
-        <param name="mfi" value="false" />
-        <param name="async" value="false" />
-        <param name="shortcut" value="true" />
-        <param name="benchmark" value="$(arg benchmark)" />
-        <param name="random_shortcut_time" value="$(arg random_shortcut_time)" />
-        <param name="tight_shortcut" value="$(arg tight_shortcut)" />
-        <param name="planner_name" value="RRTConnect" />
-        <param name="benchmark" value="$(arg benchmark)" />
-        <param name="output_file" value="$(arg output_file)" />
+        <include file="$(find panda_four_moveit_config)/launch/demo.launch">
+            <arg name="use_rviz" value="$(arg use_rviz)" />
+        </include>
 
-        <param name="pose_name" value="up" />
-        <param name="pose_name1" value="down" />
-        <param name="pose_name2" value="front" />
-        <param name="pose_name3" value="back" />
-        <param name="pose_name4" value="up_and_down" />
-        <param name="pose_name5" value="front_and_back" />
-        <param name="pose_name6" value="left_and_right" />
-        <param name="pose_name7" value="center" />
-        <param name="pose_name8" value="tiled_mess" />
-        <param name="pose_name9" value="tiled_clean" />
-        <param name="pose_name10" value="ready" />
-    </node>
+        <!-- Start the demo test node -->
+        <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true">
+            <param name="num_robots" value="4" />
+            <param name="movegroup_name" value="panda_multi_arm" />
+            <param name="group_name_0" value="panda0_arm" />
+            <param name="group_name_1" value="panda1_arm" />
+            <param name="group_name_2" value="panda2_arm" />
+            <param name="group_name_3" value="panda3_arm" />
+            <param name="mfi" value="false" />
+            <param name="async" value="false" />
+            <param name="shortcut" value="true" />
+            <param name="benchmark" value="$(arg benchmark)" />
+            <param name="random_shortcut_time" value="$(arg random_shortcut_time)" />
+            <param name="tight_shortcut" value="$(arg tight_shortcut)" />
+            <param name="planner_name" value="RRTConnect" />
+            <param name="benchmark" value="$(arg benchmark)" />
+            <param name="output_file" value="$(arg output_file)" />
+
+            <param name="pose_name" value="up" />
+            <param name="pose_name1" value="down" />
+            <param name="pose_name2" value="front" />
+            <param name="pose_name3" value="back" />
+            <param name="pose_name4" value="up_and_down" />
+            <param name="pose_name5" value="front_and_back" />
+            <param name="pose_name6" value="left_and_right" />
+            <param name="pose_name7" value="center" />
+            <param name="pose_name8" value="tiled_mess" />
+            <param name="pose_name9" value="tiled_clean" />
+            <param name="pose_name10" value="ready" />
+        </node>
+    </group>
 
 </launch>
