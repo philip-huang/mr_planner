@@ -163,7 +163,7 @@ public:
             current_joints = move_group->getCurrentJointValues();
             // clear the benchmark file
             std::ofstream ofs(benchmark_fname, std::ofstream::out);
-            ofs << "flowtime_pre, makespan_pre, flowtime_post, makespan_post" << std::endl;
+            ofs << "flowtime_pre, makespan_pre, flowtime_post, makespan_post, time_ms" << std::endl;
             ofs.close();
         }
         else if (mfi) {
@@ -386,7 +386,6 @@ int main(int argc, char** argv) {
     }
     if (nh_private.hasParam("planning_time_limit")) {
         nh_private.getParam("planning_time_limit", planning_time_limit);
-        std::cout << "Planning time limit: " << planning_time_limit << std::endl;
     }
     if (nh_private.hasParam("shortcut")) {
         nh_private.getParam("shortcut", shortcut);
@@ -433,12 +432,16 @@ int main(int argc, char** argv) {
     pp_tester.setup_once();
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
+    tpg_config.random_shortcut = true;
     tpg_config.random_shortcut_time = 0.1;
     tpg_config.ignore_far_collisions = false;
     tpg_config.shortcut = shortcut;
     tpg_config.tight_shortcut = true;
     if (nh_private.hasParam("random_shortcut_time")) {
         nh_private.getParam("random_shortcut_time", tpg_config.random_shortcut_time);
+    }
+    if (nh_private.hasParam("random_shortcut")) {
+        nh_private.getParam("random_shortcut", tpg_config.random_shortcut);
     }
     if (nh_private.hasParam("tight_shortcut")) {
         nh_private.getParam("tight_shortcut", tpg_config.tight_shortcut);

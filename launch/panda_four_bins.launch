@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <launch>
     <!-- Gazebo options -->
-    <arg name="ns" default="" />
+    <arg name="ns" default="/" />
     <arg name="use_rviz" default="true" />
     <arg name="benchmark" default="false" />
+    <arg name="random_shortcut" default="true" />
     <arg name="random_shortcut_time" default="0.1" />
     <arg name="tight_shortcut" default="true" />
     <arg name="output_file" default="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
@@ -28,6 +29,7 @@
             <param name="mfi" value="false" />
             <param name="async" value="false" />
             <param name="shortcut" value="true" />
+            <param name="random_shortcut" value="$(arg random_shortcut)" />
             <param name="random_shortcut_time" value="$(arg random_shortcut_time)" />
             <param name="tight_shortcut" value="$(arg tight_shortcut)" />
             <param name="planner_name" value="RRTConnect" />

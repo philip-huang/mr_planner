@@ -122,6 +122,10 @@ namespace TPG {
             }
         }
 
+        double getShortcutTime() const {
+            return t_shortcut_;
+        }
+
     protected:
         int getTotalNodes() const;
         int getTotalType2Edges() const;
@@ -163,6 +167,7 @@ namespace TPG {
         double pre_shortcut_makespan_ = 0.0;
         double post_shortcut_flowtime_ = 0.0;
         double post_shortcut_makespan_ = 0.0;
+        double t_shortcut_ = 0.0;
         
     };
 

@@ -152,12 +152,12 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
             findShortcuts(instance);
         }
 
-        double t_shortcut = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+        t_shortcut_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
                 
         transitiveReduction();
         numtype2edges = getTotalType2Edges();
         log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
-        log ("in " + std::to_string(t_shortcut) + " ms.", LogLevel::HLINFO);
+        log ("in " + std::to_string(t_shortcut_) + " ms.", LogLevel::HLINFO);
 
         if (config.switch_shortcut) {
             switchShortcuts();
@@ -222,7 +222,8 @@ int TPG::getTotalType2Edges() const {
 
 void TPG::saveStats(const std::string &filename) const {
     std::ofstream file(filename, std::ios::app);
-    file << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ << std::endl;
+    file << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ 
+        << ", " << t_shortcut_ << std::endl;
     file.close();
 }
 
@@ -250,8 +251,8 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
                 log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()) + " ms", LogLevel::DEBUG);
                 if (valid) {
                     // add the shortcut
-                    log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::INFO);
-                    log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::INFO);
+                    log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
+                    log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
                     
                     updateTPG(node_i, node_j, shortcut_path, col_matrix);
                     break;

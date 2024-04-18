@@ -25,6 +25,7 @@ def eval_setting(robot_name, t, tight, ns):
     params = {
         'benchmark': 'true',
         'use_rviz': 'false',
+        'random_shortcut': 'true' if t > 0 else 'false',
         'random_shortcut_time': str(t),
         'tight_shortcut': 'true' if tight else 'false',
         'ns': ns,
@@ -50,15 +51,24 @@ def eval_setting(robot_name, t, tight, ns):
 processes = []
     
 id = 0
-for env in ["panda_three", "panda_two"]:
-    for t in [0.1, 0.5]:
-        for valid in [True]:
-            ns = f'run_{id}'
-            id += 1
-            p = mp.Process(target=eval_setting, args=(env, t, valid, ns))
-            p.start()
-            processes.append(p)
-            time.sleep(1)
+envs = ["dual_gp4", "panda_two_rod", "panda_three", "panda_two"]
+# for env in envs:
+#     for t in [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]:
+#         for valid in [True, False]:
+#             ns = f'run_{id}'
+#             id += 1
+#             p = mp.Process(target=eval_setting, args=(env, t, valid, ns))
+#             p.start()
+#             processes.append(p)
+#             time.sleep(1)
+
+for env in envs:
+    ns = f'run_{id}'
+    id += 1
+    p = mp.Process(target=eval_setting, args=(env, 0, False, ns))
+    p.start()
+    processes.append(p)
+    time.sleep(1)
 
 for p in processes:
     p.join()
