@@ -142,11 +142,14 @@ public:
                     double planning_time_limit,
                     bool async,
                     bool mfi,
+                    bool load_tpg,
                     bool benchmark,
-                    const std::string &benchmark_fname) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
+                    const std::string &benchmark_fname,
+                    const std::string &tpg_savedir) : nh(nh), move_group(move_group), planning_scene(planning_scene), 
                 kinematic_state(kinematic_state), group_names(group_names), async(async),
                 planning_time_limit(planning_time_limit), mfi(mfi), planner_name(planner_name),
-                benchmark(benchmark), benchmark_fname(benchmark_fname) {
+                load_tpg(load_tpg), benchmark(benchmark), benchmark_fname(benchmark_fname),
+                tpg_savedir(tpg_savedir) {
                     num_robots = group_names.size();
                  }
 
@@ -159,11 +162,16 @@ public:
         left_arm_joint_state_received = false;
         right_arm_joint_state_received = false;
 
+        // create a directory for saving TPGs if it does not exist
+        if (!boost::filesystem::exists(tpg_savedir)) {
+            boost::filesystem::create_directories(tpg_savedir);
+        }
+
         if (benchmark) {
             current_joints = move_group->getCurrentJointValues();
             // clear the benchmark file
             std::ofstream ofs(benchmark_fname, std::ofstream::out);
-            ofs << "flowtime_pre, makespan_pre, flowtime_post, makespan_post, time_ms" << std::endl;
+            ofs << "start_pose, goal_pose, flowtime_pre, makespan_pre, flowtime_post, makespan_post, time_ms" << std::endl;
             ofs.close();
         }
         else if (mfi) {
@@ -201,28 +209,33 @@ public:
         }
     }
 
-    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
-        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
-        instance->setNumberOfRobots(num_robots);
-        instance->setRobotNames(group_names);
-        for (int i = 0; i < num_robots; i++) {
-            instance->setRobotDOF(i, 7);
+    bool saveTPG(const std::string &filename) {
+        std::ofstream ofs(filename);
+        if (!ofs.is_open()) {
+            ROS_ERROR("Failed to open file: %s", filename.c_str());
+            return false;
         }
-        /*
-        Set the start and goal poses for planner instance
-        */
-        std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
-        for (int i = 0; i < num_robots; i++) {
-            std::vector<double> start_pose(7, 0.0);
-            std::vector<double> goal_pose(7, 0.0);
-            for (size_t j = 0; j < 7; j++) {
-                start_pose[j] = current_joints[i*7+j];
-                goal_pose[j] = goal_joints[joint_names[i*7+j]];
-            }
-            instance->setStartPose(i, start_pose);
-            instance->setGoalPose(i, goal_pose);
-        }
+        boost::archive::text_oarchive oa(ofs);
+        oa << tpg;
+        
+        return true;
+    }
 
+    bool loadTPG(const std::string &filename) {
+        std::cout << "Loading TPG from file: " << filename << std::endl;
+        // open the file safely
+        std::ifstream ifs(filename);
+        if (!ifs.is_open()) {
+            ROS_ERROR("Failed to open file: %s", filename.c_str());
+            return false;
+        }
+        
+        boost::archive::text_iarchive ia(ifs);
+        ia >> tpg;
+        return true;
+    }
+
+    void motion_plan(const std::string &pose_name, std::shared_ptr<MoveitInstance> instance, const TPG::TPGConfig &tpg_config) {
         /*
         Call the planner
         */
@@ -259,12 +272,50 @@ public:
         if (!success) {
             return;
         }
+    }
+
+    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
+        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
+        instance->setNumberOfRobots(num_robots);
+        instance->setRobotNames(group_names);
+        for (int i = 0; i < num_robots; i++) {
+            instance->setRobotDOF(i, 7);
+        }
+        /*
+        Set the start and goal poses for planner instance
+        */
+        std::map<std::string, double> goal_joints = move_group->getNamedTargetValues(pose_name);
+        for (int i = 0; i < num_robots; i++) {
+            std::vector<double> start_pose(7, 0.0);
+            std::vector<double> goal_pose(7, 0.0);
+            for (size_t j = 0; j < 7; j++) {
+                start_pose[j] = current_joints[i*7+j];
+                goal_pose[j] = goal_joints[joint_names[i*7+j]];
+            }
+            instance->setStartPose(i, start_pose);
+            instance->setGoalPose(i, goal_pose);
+        }
+
+        if (!load_tpg) {
+            motion_plan(pose_name, instance, tpg_config);
+            std::string tpg_fname = tpg_savedir + "/" + last_pose_name + "_" + pose_name + ".txt";
+            saveTPG(tpg_fname);
+        }
+        else {
+            std::string tpg_fname = tpg_savedir + "/" + last_pose_name + "_" + pose_name + ".txt";
+            bool success = loadTPG(tpg_fname);
+            if (!success) {
+                ROS_ERROR("Failed to load TPG from file: %s", tpg_fname.c_str());
+                return;
+            }
+        }
 
         /*
         * Execute the plan
         */
+        bool success = tpg.optimize(instance, tpg_config);
         if (benchmark) {
-            tpg.saveStats(benchmark_fname);
+            tpg.saveStats(benchmark_fname, last_pose_name, pose_name);
 
             for (int i = 0; i < num_robots; i++) {
                 for (size_t j = 0; j < 7; j++) {
@@ -282,6 +333,7 @@ public:
         } else {
             tpg.moveit_execute(instance, move_group);
         }
+        last_pose_name = pose_name;
     
     }
 
@@ -323,8 +375,10 @@ private:
 
     int num_robots;
     std::string pose_name;
+    std::string last_pose_name="default";
     std::string planner_name;
     std::string benchmark_fname;
+    std::string tpg_savedir;
     std::vector<std::string> group_names;
     std::vector<std::string> joint_names;
     std::vector<std::vector<std::string>> joint_names_split;
@@ -335,6 +389,7 @@ private:
     bool right_arm_joint_state_received = false;
     bool async;
     bool mfi;
+    bool load_tpg;
     bool benchmark;
     double planning_time_limit = 2.0;
     double tpg_time_limit = 2.0;
@@ -367,11 +422,13 @@ int main(int argc, char** argv) {
     bool mfi = true;
     bool shortcut = true;
     bool benchmark = true;
+    bool load_tpg = false;
     double planning_time_limit = 2.0;
     std::string pose_name = "left_push_up";
     std::string movegroup_name = "dual_arms";
     std::string planner_name = "PrioritizedPlanning";
     std::string benchmark_fname = "stats.csv";
+    std::string tpg_savedir = "outputs/tpgs";
     if (nh_private.hasParam("mfi")) {
         nh_private.getParam("mfi", mfi);
     }
@@ -398,6 +455,12 @@ int main(int argc, char** argv) {
     }
     if (nh_private.hasParam("output_file")) {
         nh_private.getParam("output_file", benchmark_fname);
+    }
+    if (nh_private.hasParam("tpg_savedir")) {
+        nh_private.getParam("tpg_savedir", tpg_savedir);
+    }
+    if (nh_private.hasParam("load_tpg")) {
+        nh_private.getParam("load_tpg", load_tpg);
     }
 
     // Declare the MoveGroupInterface
@@ -428,7 +491,7 @@ int main(int argc, char** argv) {
     // test_planning(*move_group);
 
     auto pp_tester = TestPPPlanning(nh, move_group, planning_scene, kinematic_state, group_names, 
-        planner_name, planning_time_limit, async, mfi, benchmark, benchmark_fname);
+        planner_name, planning_time_limit, async, mfi, load_tpg, benchmark, benchmark_fname, tpg_savedir);
     pp_tester.setup_once();
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
@@ -465,7 +528,8 @@ int main(int argc, char** argv) {
         }
     }
     else {
-        for (auto pose_name: pose_names) {
+        for (int i = 0; i < pose_names.size(); i++) {
+            auto pose_name = pose_names[i];
             pp_tester.test(pose_name, tpg_config);
         }
     }

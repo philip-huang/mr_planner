@@ -28,6 +28,8 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     num_robots_ = instance->getNumberOfRobots();
     solution_ = solution;
 
+    auto t_start = std::chrono::high_resolution_clock::now();
+
     // 1. populate type 1 nodes
     for (int i = 0; i < num_robots_; i++) {
         double cost = solution_[i].cost;
@@ -126,8 +128,10 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         }
     }
 
+    t_init_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+
     // 4. Simplify the edges with MCP algorithm
-    auto t_start = std::chrono::high_resolution_clock::now();
+    t_start = std::chrono::high_resolution_clock::now();
     
     transitiveReduction();
     if (hasCycle()) {
@@ -136,14 +140,19 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     }
     
     int numtype2edges = getTotalType2Edges();
-    double t_simplify = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();  
+    t_simplify_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();  
     log("TPG initialized with "  + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", 
         LogLevel::HLINFO);
 
 
     //saveToDotFile("tpg_pre.dot");
+    return true;
+}
 
-    t_start = std::chrono::high_resolution_clock::now();
+
+bool TPG::optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &config) {
+    config_ = config;
+    auto t_start = std::chrono::high_resolution_clock::now();
 
     if (config.shortcut) {
         if (config.random_shortcut) {
@@ -155,7 +164,7 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         t_shortcut_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
                 
         transitiveReduction();
-        numtype2edges = getTotalType2Edges();
+        int numtype2edges = getTotalType2Edges();
         log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
         log ("in " + std::to_string(t_shortcut_) + " ms.", LogLevel::HLINFO);
 
@@ -220,9 +229,10 @@ int TPG::getTotalType2Edges() const {
     return total_edges;
 }
 
-void TPG::saveStats(const std::string &filename) const {
+void TPG::saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const {
     std::ofstream file(filename, std::ios::app);
-    file << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ 
+    file << start_pose << ", " << goal_pose << ", " 
+        << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ 
         << ", " << t_shortcut_ << std::endl;
     file.close();
 }

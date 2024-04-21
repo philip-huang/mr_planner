@@ -337,6 +337,7 @@ public:
             tpg_->reset();
             
             success &= tpg_->init(instance_, solution, tpg_config);
+            success &= tpg_->optimize(instance_, tpg_config);
             saveTPG(tpg_, output_dir_ + "/tpg_" + std::to_string(counter_) + ".txt");
             tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
 

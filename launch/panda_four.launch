@@ -10,7 +10,9 @@
     <arg name="output_file" default="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
     <arg name="planner_name" default="RRTConnect" />
     <arg name="planning_time_limit" default="2.0" />
-
+    <arg name="load_tpg" default="false" />
+    <arg name="tpg_savedir" default="$(find mr_planner)/outputs/tpgs" />
+    
     <group ns="$(arg ns)">
 
         <!-- Start the robot state publisher, simulation, and controler -->
@@ -40,6 +42,9 @@
             <param name="planning_time_limit" value="$(arg planning_time_limit)" />
             <param name="benchmark" value="$(arg benchmark)" />
             <param name="output_file" value="$(arg output_file)" />
+            <param name="load_tpg" value="$(arg load_tpg)" />
+            <param name="tpg_savedir" value="$(arg tpg_savedir)" />
+
 
             <param name="pose_name" value="up" />
             <param name="pose_name1" value="down" />

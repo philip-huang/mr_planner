@@ -14,8 +14,8 @@ def read_csv(file):
     return flowtime_improvement_perc, makespan_improvement_perc, flow_std, ms_std
 
 # Plot the data
-envs = ['dual_gp4', 'panda_two', 'panda_three', 'panda_two_rod']
-t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
+envs = ['panda_four']
+t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 tight_values = ['tight', 'loose']
 colors = ['r', 'g']
 

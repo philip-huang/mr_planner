@@ -7,6 +7,28 @@
 
 typedef actionlib::SimpleActionClient<moveit_msgs::ExecuteTrajectoryAction> TrajectoryClient;
 
+namespace boost {
+namespace serialization {
+
+template<class Archive, typename _Scalar, int _Rows, int _Cols, int _Options, int _MaxRows, int _MaxCols>
+inline void serialize(
+    Archive & ar, 
+    Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols> & t, 
+    const unsigned int file_version
+){
+    int rows = t.rows(), cols = t.cols();
+    ar & rows;
+    ar & cols;
+    if(rows * cols != t.size())
+        t.resize(rows, cols);
+
+    for(int i = 0; i < t.size(); i++)
+        ar & t.data()[i];
+}
+
+} // namespace serialization
+} // namespace boost
+
 namespace TPG {
 
     struct TPGConfig {
@@ -88,18 +110,28 @@ namespace TPG {
         ar & end_nodes_;
         ar & numNodes_;
         ar & solution_;
+        ar & pre_shortcut_flowtime_;
+        ar & pre_shortcut_makespan_;
+        ar & post_shortcut_flowtime_;
+        ar & post_shortcut_makespan_;
+        ar & t_shortcut_;
+        ar & t_init_;
+        ar & t_simplify_;
+        ar & t_bfs_;
+        ar & collisionCheckMatrix_;
     }
     public:
         TPG() = default;
         void reset();
         virtual bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
+        virtual bool optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &config);
         bool saveToDotFile(const std::string &filename) const;
         bool moveit_execute(std::shared_ptr<PlanInstance> instance, 
             std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
         bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const;
         bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
         void update_joint_states(const std::vector<double> &joint_states, int robot_id);
-        void saveStats(const std::string &filename) const;
+        void saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const;
         void getSolution(std::vector<RobotTrajectory> &solution) const {
             solution = solution_;
         }
@@ -168,6 +200,9 @@ namespace TPG {
         double post_shortcut_flowtime_ = 0.0;
         double post_shortcut_makespan_ = 0.0;
         double t_shortcut_ = 0.0;
+        double t_init_ = 0.0;
+        double t_simplify_ = 0.0;
+        double t_bfs_ = 0.0;
         
     };
 
