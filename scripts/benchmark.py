@@ -15,8 +15,13 @@ def run_script(script_path, params):
     script = subprocess.Popen(['python3', script_path, *['--{}={}'.format(k, v) for k, v in params.items()]])
     script.wait()
 
-def eval_setting(robot_name, t, tight, ns):
-    directory = f'/root/catkin_ws/src/mr_planner/outputs/t={t}_{("tight" if tight else "loose")}'
+def eval_setting(robot_name, t, tight, random_shortcut, planner_name, planning_time_limit, ns):
+    base_directory = f'/root/catkin_ws/src/mr_planner/outputs/'
+    if planner_name == "AITstar":
+        directory = base_directory + f't={planning_time_limit}_AITstar'
+    else:
+        directory = base_directory + f't={t}_{("tight" if tight else "loose")}'
+
     if not os.path.exists(directory):
         # If not, create the directory
         os.makedirs(directory)
@@ -25,9 +30,11 @@ def eval_setting(robot_name, t, tight, ns):
     params = {
         'benchmark': 'true',
         'use_rviz': 'false',
-        'random_shortcut': 'true' if t > 0 else 'false',
+        'random_shortcut': 'true' if random_shortcut else 'false',
         'random_shortcut_time': str(t),
         'tight_shortcut': 'true' if tight else 'false',
+        'planner_name': planner_name,
+        'planning_time_limit': planning_time_limit,
         'ns': ns,
         'output_file': f'{directory}/{robot_name}_benchmark.csv'
         # Add more parameters as needed
@@ -51,16 +58,20 @@ def eval_setting(robot_name, t, tight, ns):
 processes = []
     
 id = 0
-envs = ["dual_gp4", "panda_two_rod", "panda_three", "panda_two"]
-# for env in envs:
-#     for t in [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]:
-#         for valid in [True, False]:
-#             ns = f'run_{id}'
-#             id += 1
-#             p = mp.Process(target=eval_setting, args=(env, t, valid, ns))
-#             p.start()
-#             processes.append(p)
-#             time.sleep(1)
+envs = ["dual_gp4", "panda_two_rod", "panda_three", "panda_two", 'panda_four']
+random_shortcut = True
+planner_name = 'AITstar'
+shortcut_time = 0
+for env in envs:
+    for planning_time in [15, 100]:
+        for valid in [True, False]:
+            ns = f'run_{id}'
+            id += 1
+            p = mp.Process(target=eval_setting, 
+                           args=(env, shortcut_time, valid, random_shortcut, planner_name, planning_time, ns))
+            p.start()
+            processes.append(p)
+            time.sleep(1)
 
 for env in envs:
     ns = f'run_{id}'

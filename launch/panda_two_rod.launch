@@ -8,6 +8,8 @@
     <arg name="random_shortcut_time" default="0.1" />
     <arg name="tight_shortcut" default="true" />
     <arg name="output_file" default="$(find mr_planner)/outputs/dual_gp4_benchmark.csv" />
+    <arg name="planner_name" default="RRTConnect" />
+    <arg name="planning_time_limit" default="2.0" />
 
     <group ns="$(arg ns)">
 
@@ -32,7 +34,8 @@
             <param name="random_shortcut" value="$(arg random_shortcut)" />
             <param name="random_shortcut_time" value="$(arg random_shortcut_time)" />
             <param name="tight_shortcut" value="$(arg tight_shortcut)" />
-            <param name="planner_name" value="RRTConnect" />
+            <param name="planner_name" value="$(arg planner_name)" />
+            <param name="planning_time_limit" value="$(arg planning_time_limit)" />
             <param name="benchmark" value="$(arg benchmark)" />
             <param name="output_file" value="$(arg output_file)" />
         

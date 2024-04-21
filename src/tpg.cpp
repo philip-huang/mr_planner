@@ -409,6 +409,8 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
         shortcut_path.push_back(pose_i);
     }
 
+    auto tic = std::chrono::high_resolution_clock::now();
+
     // find dependent parent and child nodes
     std::vector<std::vector<bool>> visited;
     for (int i = 0; i < num_robots_; i++) {
@@ -446,6 +448,8 @@ bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr
         col_matrix_j.setZero();
         col_matrix.push_back(col_matrix_j);
     }
+
+    auto t_bfs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tic).count();
 
     // check robot-robot collision
     for (int i = 1; i < shortcutSteps - 1; i++) {
