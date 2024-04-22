@@ -248,10 +248,13 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
     // if there is no collision, add the shortcut and remove old nodes
     // add the new nodes to the list of nodes
 
+    double elapsed = 0;
+    
     for (int i = 0; i < num_robots_; i++) {
+        auto t_start = std::chrono::high_resolution_clock::now();
         std::shared_ptr<Node> node_i = start_nodes_[i];
-        while (node_i != nullptr) {
-            std::shared_ptr<Node> node_j = end_nodes_[i];
+        while (node_i->Type1Next != nullptr) {
+            std::shared_ptr<Node> node_j = start_nodes_[i]->Type1Next->Type1Next;
             while (node_j != nullptr && ((node_j->timeStep - node_i->timeStep) > 1)) {
                 std::vector<Eigen::MatrixXi> col_matrix;
                 std::vector<RobotPose> shortcut_path;
@@ -267,9 +270,17 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
                     updateTPG(node_i, node_j, shortcut_path, col_matrix);
                     break;
                 }
-                node_j = node_j->Type1Prev;
+                node_j = node_j->Type1Next;
+
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
+                if (elapsed > config_.random_shortcut_time/num_robots_) {
+                    break;
+                }
             }
             node_i = node_i->Type1Next;
+            if (elapsed > config_.random_shortcut_time/num_robots_) {
+                break;
+            }
         }
     }
 }
