@@ -11,8 +11,8 @@
     <arg name="planner_name" default="RRTConnect" />
     <arg name="planning_time_limit" default="2.0" />
     <arg name="load_tpg" default="false" />
-    <arg name="tpg_savedir" default="$(find mr_planner)/outputs/tpgs" />
-    
+    <arg name="tpg_savedir" default="$(find mr_planner)/outputs/tpgs/t=5.0_RRTConnect_panda_two_rod" />
+
     <group ns="$(arg ns)">
 
         <!-- Start the robot state publisher, simulation, and controler -->

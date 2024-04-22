@@ -128,7 +128,7 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
         }
     }
 
-    t_init_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+    t_init_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
 
     // 4. Simplify the edges with MCP algorithm
     t_start = std::chrono::high_resolution_clock::now();
@@ -140,7 +140,7 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     }
     
     int numtype2edges = getTotalType2Edges();
-    t_simplify_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();  
+    t_simplify_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;  
     log("TPG initialized with "  + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", 
         LogLevel::HLINFO);
 
@@ -161,12 +161,12 @@ bool TPG::optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &conf
             findShortcuts(instance);
         }
 
-        t_shortcut_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+        t_shortcut_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
                 
         transitiveReduction();
         int numtype2edges = getTotalType2Edges();
         log ("TPG after finding shortcuts: " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges.", LogLevel::HLINFO);
-        log ("in " + std::to_string(t_shortcut_) + " ms.", LogLevel::HLINFO);
+        log ("in " + std::to_string(t_shortcut_) + " s.", LogLevel::HLINFO);
 
         if (config.switch_shortcut) {
             switchShortcuts();
@@ -231,9 +231,9 @@ int TPG::getTotalType2Edges() const {
 
 void TPG::saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const {
     std::ofstream file(filename, std::ios::app);
-    file << start_pose << ", " << goal_pose << ", " 
-        << pre_shortcut_flowtime_ << ", " << pre_shortcut_makespan_ << ", " << post_shortcut_flowtime_ << ", " << post_shortcut_makespan_ 
-        << ", " << t_shortcut_ << std::endl;
+    file << start_pose << "," << goal_pose << "," 
+        << pre_shortcut_flowtime_ << "," << pre_shortcut_makespan_ << "," << post_shortcut_flowtime_ << "," << post_shortcut_makespan_ 
+        << "," << t_init_ << "," << t_shortcut_ << "," << t_simplify_ << "," << t_shortcut_check_ << "," << num_shortcut_checks_ << std::endl;
     file.close();
 }
 
@@ -371,8 +371,11 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
         auto tic_inner = std::chrono::high_resolution_clock::now();
         bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
-        auto toc_inner = std::chrono::high_resolution_clock::now();        
-        log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(toc_inner - tic_inner).count()) + " us", LogLevel::DEBUG);
+        auto toc_inner = std::chrono::high_resolution_clock::now();
+        auto inner = std::chrono::duration_cast<std::chrono::microseconds>(toc_inner - tic_inner).count();
+        t_shortcut_check_ += (inner * 1e-6);
+        num_shortcut_checks_++;
+        log("Time taken for checking shortcuts: " + std::to_string(inner) + " us", LogLevel::DEBUG);
 
         if (valid) {
             // add the shortcut
@@ -535,60 +538,60 @@ void TPG::updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
     int reducedSteps = numNodes_prev - numNodes_[ni->robotId];
 
     // update the collision matrix
-    for (int j = 0; j < num_robots_; j++) {
-        if (ni->robotId == j) {
-            continue;
-        }
-        Eigen::MatrixXi col_matrix_ij;
-        getCollisionCheckMatrix(ni->robotId, j, col_matrix_ij);
+    // for (int j = 0; j < num_robots_; j++) {
+    //     if (ni->robotId == j) {
+    //         continue;
+    //     }
+    //     Eigen::MatrixXi col_matrix_ij;
+    //     getCollisionCheckMatrix(ni->robotId, j, col_matrix_ij);
 
-        Eigen::MatrixXi new_col_matrix_ij(numNodes_[ni->robotId], numNodes_[j]);
-        new_col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]) = col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]);
-        if (col_matrix.size() > j && col_matrix[j].rows() > 0) {
-            new_col_matrix_ij.block(ni->timeStep + 1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]) = col_matrix[j].block(1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]);
-        } 
-        new_col_matrix_ij.block(nj->timeStep, 0, numNodes_[ni->robotId] - nj->timeStep, numNodes_[j]) = col_matrix_ij.block(nj_prevt, 0, numNodes_prev - nj_prevt, numNodes_[j]);
+    //     Eigen::MatrixXi new_col_matrix_ij(numNodes_[ni->robotId], numNodes_[j]);
+    //     new_col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]) = col_matrix_ij.block(0, 0, ni->timeStep + 1, numNodes_[j]);
+    //     if (col_matrix.size() > j && col_matrix[j].rows() > 0) {
+    //         new_col_matrix_ij.block(ni->timeStep + 1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]) = col_matrix[j].block(1, 0, nj->timeStep - 1 - ni->timeStep, numNodes_[j]);
+    //     } 
+    //     new_col_matrix_ij.block(nj->timeStep, 0, numNodes_[ni->robotId] - nj->timeStep, numNodes_[j]) = col_matrix_ij.block(nj_prevt, 0, numNodes_prev - nj_prevt, numNodes_[j]);
 
-        updateCollisionCheckMatrix(ni->robotId, j, new_col_matrix_ij);
+    //     updateCollisionCheckMatrix(ni->robotId, j, new_col_matrix_ij);
 
-        if (config_.ignore_far_collisions) {
-            // add additional type-2 dependencies for ignored collision checking
-            std::shared_ptr<Node> node_ignored = start_nodes_[j];
-            int steps = 0;
-            if ((ni->timeStep - config_.ignore_steps) > 0) {
+    //     if (config_.ignore_far_collisions) {
+    //         // add additional type-2 dependencies for ignored collision checking
+    //         std::shared_ptr<Node> node_ignored = start_nodes_[j];
+    //         int steps = 0;
+    //         if ((ni->timeStep - config_.ignore_steps) > 0) {
             
-                while (node_ignored != nullptr && steps < (ni->timeStep - config_.ignore_steps)) {
-                    node_ignored = node_ignored->Type1Next;
-                    steps++;
-                }
-                if (node_ignored != nullptr) {
-                    type2Edge edge_b;
-                    edge_b.edgeId = idType2Edges_;
-                    edge_b.nodeFrom = node_ignored;
-                    edge_b.nodeTo = nj;
-                    node_ignored->Type2Next.push_back(edge_b);
-                    nj->Type2Prev.push_back(edge_b);
-                    idType2Edges_++;
-                }
-            }
+    //             while (node_ignored != nullptr && steps < (ni->timeStep - config_.ignore_steps)) {
+    //                 node_ignored = node_ignored->Type1Next;
+    //                 steps++;
+    //             }
+    //             if (node_ignored != nullptr) {
+    //                 type2Edge edge_b;
+    //                 edge_b.edgeId = idType2Edges_;
+    //                 edge_b.nodeFrom = node_ignored;
+    //                 edge_b.nodeTo = nj;
+    //                 node_ignored->Type2Next.push_back(edge_b);
+    //                 nj->Type2Prev.push_back(edge_b);
+    //                 idType2Edges_++;
+    //             }
+    //         }
 
-            if ((nj->timeStep +  config_.ignore_steps) < numNodes_[j]) {
-                while (node_ignored != nullptr && steps <= (nj->timeStep + config_.ignore_steps)) {
-                    node_ignored = node_ignored->Type1Next;
-                    steps++;
-                }
-                if (node_ignored != nullptr) {
-                    type2Edge edge_f;
-                    edge_f.edgeId = idType2Edges_;
-                    edge_f.nodeFrom = nj;
-                    edge_f.nodeTo = node_ignored;
-                    nj->Type2Next.push_back(edge_f);
-                    node_ignored->Type2Prev.push_back(edge_f);
-                    idType2Edges_++;
-                }
-            }
-        }
-    }
+    //         if ((nj->timeStep +  config_.ignore_steps) < numNodes_[j]) {
+    //             while (node_ignored != nullptr && steps <= (nj->timeStep + config_.ignore_steps)) {
+    //                 node_ignored = node_ignored->Type1Next;
+    //                 steps++;
+    //             }
+    //             if (node_ignored != nullptr) {
+    //                 type2Edge edge_f;
+    //                 edge_f.edgeId = idType2Edges_;
+    //                 edge_f.nodeFrom = nj;
+    //                 edge_f.nodeTo = node_ignored;
+    //                 nj->Type2Next.push_back(edge_f);
+    //                 node_ignored->Type2Prev.push_back(edge_f);
+    //                 idType2Edges_++;
+    //             }
+    //         }
+    //     }
+    // }
 
     
 }

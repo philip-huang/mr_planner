@@ -117,7 +117,8 @@ namespace TPG {
         ar & t_shortcut_;
         ar & t_init_;
         ar & t_simplify_;
-        ar & t_bfs_;
+        ar & t_shortcut_check_;
+        ar & num_shortcut_checks_;
         ar & collisionCheckMatrix_;
     }
     public:
@@ -202,7 +203,8 @@ namespace TPG {
         double t_shortcut_ = 0.0;
         double t_init_ = 0.0;
         double t_simplify_ = 0.0;
-        double t_bfs_ = 0.0;
+        double t_shortcut_check_ = 0.0;
+        int num_shortcut_checks_ = 0;
         
     };
 

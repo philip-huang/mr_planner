@@ -1,10 +1,20 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+from count_stats import average_improvement
 
 # Read the data from the csv file
 def read_csv(file):
-    df = pd.read_csv(file)
+    df = pd.read_csv(file, dtype={'start_pose' : str,
+                                  'goal_pose': str,
+                                   'flowtime_pre': float,
+                                   'makespan_pre': float,
+                                    'flowtime_post': float,
+                                    'makespan_post': float,
+                                    'time_ms': float},
+                            sep=', ', engine='python')
+
+    df = average_improvement(df)
 
     # access the cell in the last row and "flowtime_improvement_perc" column
     flowtime_improvement_perc = df.iloc[-2]['flowtime_improvement_perc']
@@ -14,14 +24,14 @@ def read_csv(file):
     return flowtime_improvement_perc, makespan_improvement_perc, flow_std, ms_std
 
 # Plot the data
-envs = ['panda_four']
-t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+envs = ['panda_two', 'panda_three', 'panda_four', 'panda_two_rod']
+t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
 tight_values = ['tight', 'loose']
 colors = ['r', 'g']
 
 plt.figure()
 for env in envs:
-    plt.subplot(2, 2, envs.index(env) + 1)
+    plt.subplot(2, 3, envs.index(env) + 1)
     plt.title(f'{env}')
     for color, tight in zip(colors, tight_values):
         vals = []
@@ -29,16 +39,17 @@ for env in envs:
         for t in t_values:
             # Read the data
             dir = f'../outputs/t={t}_{tight}'
-            flowtime_improvement_perc, makespan_improvement_perc, flow_std, ms_std = read_csv(f'{dir}/{env}_benchmark.avg.csv')
+            flowtime_improvement_perc, makespan_improvement_perc, flow_std, ms_std = read_csv(f'{dir}/{env}_benchmark.csv')
             vals.append(makespan_improvement_perc)
             stds.append(ms_std)
 
         
         # Plot the data with the specified color and label
+        print(vals)
         plt.scatter(t_values, vals, label=f'{tight}', marker='x', color=color)
 
         # Plot the stddev as shaded region with the same color but without a label
-        plt.fill_between(t_values, np.array(vals) - np.array(stds), np.array(vals) + np.array(stds), alpha=0.2, color=color)
+        #plt.fill_between(t_values, np.array(vals) - np.array(stds), np.array(vals) + np.array(stds), alpha=0.2, color=color)
 
     # log axis for x
     plt.xscale('log')

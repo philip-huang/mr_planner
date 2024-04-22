@@ -171,7 +171,7 @@ public:
             current_joints = move_group->getCurrentJointValues();
             // clear the benchmark file
             std::ofstream ofs(benchmark_fname, std::ofstream::out);
-            ofs << "start_pose, goal_pose, flowtime_pre, makespan_pre, flowtime_post, makespan_post, time_ms" << std::endl;
+            ofs << "start_pose,goal_pose,flowtime_pre,makespan_pre,flowtime_post,makespan_post,t_init,t_shortcut,t_mcp,t_check,n_check" << std::endl;
             ofs.close();
         }
         else if (mfi) {
@@ -222,7 +222,6 @@ public:
     }
 
     bool loadTPG(const std::string &filename) {
-        std::cout << "Loading TPG from file: " << filename << std::endl;
         // open the file safely
         std::ifstream ifs(filename);
         if (!ifs.is_open()) {
@@ -235,7 +234,7 @@ public:
         return true;
     }
 
-    void motion_plan(const std::string &pose_name, std::shared_ptr<MoveitInstance> instance, const TPG::TPGConfig &tpg_config) {
+    bool motion_plan(const std::string &pose_name, std::shared_ptr<MoveitInstance> instance, const TPG::TPGConfig &tpg_config) {
         /*
         Call the planner
         */
@@ -246,7 +245,7 @@ public:
             bool success = planner.plan(options);
             if (!success) {
                 ROS_INFO("Failed to plan");
-                return;
+                return false;
             }
             
             success &= planner.getPlan(solution);
@@ -259,7 +258,7 @@ public:
             bool success = (move_group->plan(plan) == moveit::planning_interface::MoveItErrorCode::SUCCESS);
             if (!success) {
                 ROS_INFO("Failed to plan");
-                return;
+                return false;
             }
             convertSolution(instance, plan, solution);        
         }
@@ -270,11 +269,14 @@ public:
         tpg.reset();
         bool success = tpg.init(instance, solution, tpg_config);
         if (!success) {
-            return;
+            return false;
         }
+        return true;
     }
 
-    void test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
+    bool test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
+        bool success = true;
+    
         auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
         instance->setNumberOfRobots(num_robots);
         instance->setRobotNames(group_names);
@@ -297,23 +299,32 @@ public:
         }
 
         if (!load_tpg) {
-            motion_plan(pose_name, instance, tpg_config);
+            success &= motion_plan(pose_name, instance, tpg_config);
+            if (!success) {
+                last_pose_name = pose_name;
+                return false;
+            }
             std::string tpg_fname = tpg_savedir + "/" + last_pose_name + "_" + pose_name + ".txt";
-            saveTPG(tpg_fname);
+            success &= saveTPG(tpg_fname);
+            if (!success) {
+                last_pose_name = pose_name;
+                return false;
+            }
         }
         else {
             std::string tpg_fname = tpg_savedir + "/" + last_pose_name + "_" + pose_name + ".txt";
-            bool success = loadTPG(tpg_fname);
+            success &= loadTPG(tpg_fname);
             if (!success) {
+                last_pose_name = pose_name;
                 ROS_ERROR("Failed to load TPG from file: %s", tpg_fname.c_str());
-                return;
+                return false;
             }
         }
 
         /*
         * Execute the plan
         */
-        bool success = tpg.optimize(instance, tpg_config);
+        success &= tpg.optimize(instance, tpg_config);
         if (benchmark) {
             tpg.saveStats(benchmark_fname, last_pose_name, pose_name);
 
@@ -334,7 +345,7 @@ public:
             tpg.moveit_execute(instance, move_group);
         }
         last_pose_name = pose_name;
-    
+        return success;
     }
 
     void left_arm_joint_state_cb(const sensor_msgs::JointState::ConstPtr& msg) {
