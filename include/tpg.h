@@ -34,10 +34,13 @@ namespace TPG {
     struct TPGConfig {
         bool shortcut = true;
         bool random_shortcut = true;
+        bool forward_doubleloop = false;
+        bool backward_doubleloop = false;
+        bool forward_singleloop = true;
         bool ignore_far_collisions = false;
         bool helpful_shortcut = false;
         bool tight_shortcut = true;
-        double random_shortcut_time = 1;
+        double shortcut_time = 1;
         double dt = 0.1;
         double switch_shortcut = false;
         int ignore_steps = 5;
@@ -165,12 +168,14 @@ namespace TPG {
         void getCollisionCheckMatrix(int robot_i, int robot_j, Eigen::MatrixXi &col_matrix) const;
         void updateCollisionCheckMatrix(int robot_i, int robot_j, const Eigen::MatrixXi &col_matrix);
         void transitiveReduction();
-        void findShortcuts(std::shared_ptr<PlanInstance> instance);
+        void findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         void findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end);
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         void findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t);
         void findFlowtimeMakespan(double &flowtime, double &makespan);
+        bool preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
+            const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const;
         bool checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void switchShortcuts();

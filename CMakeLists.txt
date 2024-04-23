@@ -7,6 +7,15 @@ project(mr_planner VERSION 1.0.0 LANGUAGES CXX)
 # /* -------------------------------------------------------------------------- */
 add_compile_options(-std=c++11)
 add_definitions(-D_OS_UNIX)
+# Check if profiling is needed
+option(ENABLE_PROFILING "Enable profiling with gprof" OFF)
+
+if (ENABLE_PROFILING)
+    # Add the -pg flag to the compiler and linker flags
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+endif()
+
 
 # /* -------------------------------------------------------------------------- */
 # /*                                Find Package                                */

@@ -156,9 +156,9 @@ bool TPG::optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &conf
 
     if (config.shortcut) {
         if (config.random_shortcut) {
-            findShortcutsRandom(instance, config.random_shortcut_time);
+            findShortcutsRandom(instance, config.shortcut_time);
         } else {
-            findShortcuts(instance);
+            findShortcuts(instance, config.shortcut_time);
         }
 
         t_shortcut_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
@@ -239,7 +239,7 @@ void TPG::saveStats(const std::string &filename, const std::string &start_pose, 
     file.close();
 }
 
-void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
+void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_limit)
 {
     // for every robot
     // for every pair of nodes
@@ -251,39 +251,121 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance)
     // add the new nodes to the list of nodes
 
     double elapsed = 0;
-    
+    std::queue<std::shared_ptr<Node>> q_i;
+    std::queue<std::shared_ptr<Node>> q_j;
     for (int i = 0; i < num_robots_; i++) {
-        auto t_start = std::chrono::high_resolution_clock::now();
-        std::shared_ptr<Node> node_i = start_nodes_[i];
-        while (node_i->Type1Next != nullptr) {
-            std::shared_ptr<Node> node_j = start_nodes_[i]->Type1Next->Type1Next;
-            while (node_j != nullptr && ((node_j->timeStep - node_i->timeStep) > 1)) {
-                std::vector<Eigen::MatrixXi> col_matrix;
-                std::vector<RobotPose> shortcut_path;
-                auto tic = std::chrono::high_resolution_clock::now();
-                bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
-                auto toc = std::chrono::high_resolution_clock::now();
-                log("Time taken for checking shortcuts: " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic).count()) + " ms", LogLevel::DEBUG);
-                if (valid) {
-                    // add the shortcut
-                    log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
-                    log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
-                    
-                    updateTPG(node_i, node_j, shortcut_path, col_matrix);
-                    break;
-                }
-                node_j = node_j->Type1Next;
+        q_i.push(start_nodes_[i]);
+        if (config_.backward_doubleloop) {
+            q_j.push(end_nodes_[i]);
+        }
+        else {
+            q_j.push(start_nodes_[i]->Type1Next);
+        }
+    }
 
-                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
-                if (elapsed > config_.random_shortcut_time/num_robots_) {
-                    break;
-                }
+    auto tic = std::chrono::high_resolution_clock::now();
+
+    std::vector<std::vector<int>> earliest_t, latest_t;
+    std::vector<int> reached_end, updated_reached_end;
+    findEarliestReachTime(earliest_t, reached_end);
+    if (config_.tight_shortcut) {
+        findLatestReachTime(latest_t, reached_end);
+        findTightType2Edges(earliest_t, latest_t);
+    }
+
+
+    while (elapsed < runtime_limit) {
+        std::shared_ptr<Node> node_i = q_i.front();
+        std::shared_ptr<Node> node_j = q_j.front();
+        q_i.pop();
+        q_j.pop();
+
+        if (config_.backward_doubleloop) {
+            if (node_i == node_j) {
+                return;
             }
-            node_i = node_i->Type1Next;
-            if (elapsed > config_.random_shortcut_time/num_robots_) {
-                break;
+            if (node_i->Type1Next == node_j) {
+                q_i.push(node_i->Type1Next);
+                q_j.push(end_nodes_[node_i->robotId]);
+
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
             }
         }
+        else {
+
+            if (node_j == nullptr) {
+                if (node_i->Type1Next == nullptr) {
+                    return;
+                }
+                q_i.push(node_i->Type1Next);
+                q_j.push(node_i->Type1Next->Type1Next);
+                
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
+            }
+            if (node_i->Type1Next == node_j) {
+                q_i.push(node_i);
+                q_j.push(node_j->Type1Next);
+                
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
+            }
+        }
+
+        int robot_id = node_i->robotId;
+        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
+        bool valid = false;
+        if (pre_check) {
+            std::vector<Eigen::MatrixXi> col_matrix;
+            std::vector<RobotPose> shortcut_path;
+
+            auto tic_inner = std::chrono::high_resolution_clock::now();
+            valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
+            auto inner = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tic_inner).count();
+            t_shortcut_check_ += (inner * 1e-6);
+            num_shortcut_checks_++;
+
+            if (valid) {
+                // add the shortcut
+                updateTPG(node_i, node_j, shortcut_path, col_matrix);
+
+                // calculate statistics
+                findEarliestReachTime(earliest_t, updated_reached_end);
+
+                reached_end = updated_reached_end;
+                if (config_.tight_shortcut) {
+                    findLatestReachTime(latest_t, reached_end);
+                    findTightType2Edges(earliest_t, latest_t);
+                }
+                num_valid_shortcuts_++;
+            }
+        }
+
+        if (config_.backward_doubleloop) {
+            q_i.push(node_i);
+            q_j.push(node_j->Type1Prev);
+        }
+        else if (config_.forward_doubleloop) {
+            q_i.push(node_i);
+            q_j.push(node_j->Type1Next);
+        }
+        else if (config_.forward_singleloop) {
+            if (valid) {
+                q_i.push(node_j);
+                q_j.push(node_j->Type1Next);
+            }
+            else {
+                q_i.push(node_i);
+                q_j.push(node_j->Type1Next);
+            }
+        }
+
+        auto toc = std::chrono::high_resolution_clock::now();
+        elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
     }
 }
 
@@ -323,93 +405,40 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
             assert(node_j != nullptr);
         }
 
-        if (config_.helpful_shortcut) {
-            bool helpful = false;
-            std::shared_ptr <Node> current = node_i->Type1Next;
-            while (!helpful && current != node_j) {
-                if (current->Type2Next.size() > 0) {
-                    helpful = true;
+        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[i], latest_t[i]);
+        if (pre_check) {
+            std::vector<Eigen::MatrixXi> col_matrix;
+            std::vector<RobotPose> shortcut_path;
+
+            auto tic_inner = std::chrono::high_resolution_clock::now();
+            bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
+            auto inner = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tic_inner).count();
+            t_shortcut_check_ += (inner * 1e-6);
+            num_shortcut_checks_++;
+            log("Time taken for checking shortcuts: " + std::to_string(inner) + " us", LogLevel::DEBUG);
+
+            if (valid) {
+                // add the shortcut
+                log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
+                log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
+                
+                updateTPG(node_i, node_j, shortcut_path, col_matrix);
+
+                // calculate statistics
+                findEarliestReachTime(earliest_t, updated_reached_end);
+                int flowtime_diff = 0;
+                for (int ri = 0; ri < num_robots_; ri++) {
+                    flowtime_diff += (reached_end[ri] - updated_reached_end[ri]); 
                 }
-                current = current->Type1Next;
-            }
-            current = node_j;
-            while (!helpful && current != nullptr) {
-                if (current->Type2Prev.size() > 0) {
-                    for (auto edge : current->Type2Prev) {
-                        if (edge.nodeFrom->timeStep >= current->timeStep) {
-                            break;
-                        }
-                    }
+                flowtime_improv_ += (flowtime_diff * dt_);
+
+                reached_end = updated_reached_end;
+                if (config_.tight_shortcut) {
+                    findLatestReachTime(latest_t, reached_end);
+                    findTightType2Edges(earliest_t, latest_t);
                 }
-                if (current->Type2Next.size() > 0) {
-                    helpful = true;
-                }
-                current = current->Type1Next;
+                num_valid_shortcuts_++;
             }
-            if (!helpful && (current != nullptr)) {
-                auto toc = std::chrono::high_resolution_clock::now();
-                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
-                continue;
-            }
-        }
-
-        if (config_.tight_shortcut) {
-            std::shared_ptr<Node> current = node_i;
-            bool has_tight_type2_edge = false;
-            bool all_tight_type1_edge = (earliest_t[i][node_i->timeStep] == latest_t[i][node_i->timeStep]);
-            while (current != node_j) {
-
-                for (auto edge : current->Type2Prev) {
-                    if (edge.tight) {
-                        has_tight_type2_edge = true;
-                        break;
-                    }
-                }
-                current = current->Type1Next;
-                if (earliest_t[i][current->timeStep] < latest_t[i][current->timeStep]) {
-                    all_tight_type1_edge = false;
-                }
-            }
-            
-            if (!has_tight_type2_edge && !all_tight_type1_edge) {
-                auto toc = std::chrono::high_resolution_clock::now();
-                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
-                continue;
-            }
-        }
-
-        std::vector<Eigen::MatrixXi> col_matrix;
-        std::vector<RobotPose> shortcut_path;
-
-        auto tic_inner = std::chrono::high_resolution_clock::now();
-        bool valid = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
-        auto toc_inner = std::chrono::high_resolution_clock::now();
-        auto inner = std::chrono::duration_cast<std::chrono::microseconds>(toc_inner - tic_inner).count();
-        t_shortcut_check_ += (inner * 1e-6);
-        num_shortcut_checks_++;
-        log("Time taken for checking shortcuts: " + std::to_string(inner) + " us", LogLevel::DEBUG);
-
-        if (valid) {
-            // add the shortcut
-            log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
-            log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
-            
-            updateTPG(node_i, node_j, shortcut_path, col_matrix);
-
-            // calculate statistics
-            findEarliestReachTime(earliest_t, updated_reached_end);
-            int flowtime_diff = 0;
-            for (int i = 0; i < num_robots_; i++) {
-                flowtime_diff += (reached_end[i] - updated_reached_end[i]); 
-            }
-            flowtime_improv_ += (flowtime_diff * dt_);
-
-            reached_end = updated_reached_end;
-            if (config_.tight_shortcut) {
-                findLatestReachTime(latest_t, reached_end);
-                findTightType2Edges(earliest_t, latest_t);
-            }
-            num_valid_shortcuts_++;
         }
 
         auto toc = std::chrono::high_resolution_clock::now();
@@ -417,6 +446,73 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
     }
 
     assert(hasCycle() == false);
+}
+
+bool TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
+        const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const {    
+    // check if there is a shortcut between ni and nj
+    assert(ni->robotId == nj->robotId && ni->timeStep < nj->timeStep - 1);
+
+    double timeNeeded = instance->computeDistance(ni->pose, nj->pose) / instance->getVMax(ni->robotId);
+    timeNeeded = std::ceil(timeNeeded / dt_) * dt_;
+    int shortcutSteps = timeNeeded / dt_ + 1;
+
+    if (shortcutSteps > (nj->timeStep - ni->timeStep)) {
+        return false; // no need for shortcut
+    }
+
+    if (config_.helpful_shortcut) {
+        bool helpful = false;
+        std::shared_ptr <Node> current = ni->Type1Next;
+        while (!helpful && current != nj) {
+            if (current->Type2Next.size() > 0) {
+                helpful = true;
+            }
+            current = current->Type1Next;
+        }
+        current = nj;
+        while (!helpful && current != nullptr) {
+            if (current->Type2Prev.size() > 0) {
+                for (auto edge : current->Type2Prev) {
+                    if (edge.nodeFrom->timeStep >= current->timeStep) {
+                        break;
+                    }
+                }
+            }
+            if (current->Type2Next.size() > 0) {
+                helpful = true;
+            }
+            current = current->Type1Next;
+        }
+        if (!helpful && (current != nullptr)) {
+            return false;
+        }
+    }
+
+    if (config_.tight_shortcut) {
+        std::shared_ptr<Node> current = ni;
+        bool has_tight_type2_edge = false;
+        bool all_tight_type1_edge = (earliest_t[ni->timeStep] == latest_t[ni->timeStep]);
+        while (current != nj) {
+
+            for (auto edge : current->Type2Prev) {
+                if (edge.tight) {
+                    has_tight_type2_edge = true;
+                    break;
+                }
+            }
+            current = current->Type1Next;
+            if (earliest_t[current->timeStep] < latest_t[current->timeStep]) {
+                all_tight_type1_edge = false;
+            }
+        }
+        
+        if (!has_tight_type2_edge && !all_tight_type1_edge) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 

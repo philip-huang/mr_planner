@@ -474,6 +474,8 @@ int main(int argc, char** argv) {
         nh_private.getParam("load_tpg", load_tpg);
     }
 
+    // wait 100 miliseconds for the move_group_interface to be ready
+    ros::Duration(0.1).sleep();
     // Declare the MoveGroupInterface
     auto move_group = std::make_shared<moveit::planning_interface::MoveGroupInterface>(movegroup_name);
 
@@ -507,18 +509,30 @@ int main(int argc, char** argv) {
     //test_planning(*move_group, pose_name);
     TPG::TPGConfig tpg_config;
     tpg_config.random_shortcut = true;
-    tpg_config.random_shortcut_time = 0.1;
+    tpg_config.shortcut_time = 0.1;
     tpg_config.ignore_far_collisions = false;
     tpg_config.shortcut = shortcut;
     tpg_config.tight_shortcut = true;
-    if (nh_private.hasParam("random_shortcut_time")) {
-        nh_private.getParam("random_shortcut_time", tpg_config.random_shortcut_time);
+    tpg_config.forward_doubleloop = false;
+    tpg_config.backward_doubleloop = false;
+    tpg_config.forward_singleloop = true;
+    if (nh_private.hasParam("shortcut_time")) {
+        nh_private.getParam("shortcut_time", tpg_config.shortcut_time);
     }
     if (nh_private.hasParam("random_shortcut")) {
         nh_private.getParam("random_shortcut", tpg_config.random_shortcut);
     }
     if (nh_private.hasParam("tight_shortcut")) {
         nh_private.getParam("tight_shortcut", tpg_config.tight_shortcut);
+    }
+    if (nh_private.hasParam("forward_doubleloop")) {
+        nh_private.getParam("forward_doubleloop", tpg_config.forward_doubleloop);
+    }
+    if (nh_private.hasParam("backward_doubleloop")) {
+        nh_private.getParam("backward_doubleloop", tpg_config.backward_doubleloop);
+    }
+    if (nh_private.hasParam("forward_singleloop")) {
+        nh_private.getParam("forward_singleloop", tpg_config.forward_singleloop);
     }
 
     std::vector<std::string> pose_names = {pose_name};
