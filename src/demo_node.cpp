@@ -171,7 +171,7 @@ public:
             current_joints = move_group->getCurrentJointValues();
             // clear the benchmark file
             std::ofstream ofs(benchmark_fname, std::ofstream::out);
-            ofs << "start_pose,goal_pose,flowtime_pre,makespan_pre,flowtime_post,makespan_post,t_init,t_shortcut,t_mcp,t_check,n_check" << std::endl;
+            ofs << "start_pose,goal_pose,flowtime_pre,makespan_pre,flowtime_post,makespan_post,t_init,t_shortcut,t_mcp,t_check,n_check,n_valid" << std::endl;
             ofs.close();
         }
         else if (mfi) {

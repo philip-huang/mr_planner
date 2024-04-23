@@ -174,13 +174,14 @@ bool TPG::optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &conf
 
         //saveToDotFile("tpg.dot");
 
-        trajectory_msgs::JointTrajectory joint_traj;
-        size_t num_joints = 0;
-        for (int i = 0; i < num_robots_; i++ ) {
-            num_joints += instance->getRobotDOF(i);
-        }
-        joint_traj.joint_names.resize(num_joints);
-        setSyncJointTrajectory(joint_traj, post_shortcut_flowtime_, post_shortcut_makespan_);
+        // trajectory_msgs::JointTrajectory joint_traj;
+        // size_t num_joints = 0;
+        // for (int i = 0; i < num_robots_; i++ ) {
+        //     num_joints += instance->getRobotDOF(i);
+        // }
+        // joint_traj.joint_names.resize(num_joints);
+        // setSyncJointTrajectory(joint_traj, post_shortcut_flowtime_, post_shortcut_makespan_);
+        findFlowtimeMakespan(post_shortcut_flowtime_, post_shortcut_makespan_);
     }
 
     // 5. Print the TPG for debugging purposes
@@ -233,7 +234,8 @@ void TPG::saveStats(const std::string &filename, const std::string &start_pose, 
     std::ofstream file(filename, std::ios::app);
     file << start_pose << "," << goal_pose << "," 
         << pre_shortcut_flowtime_ << "," << pre_shortcut_makespan_ << "," << post_shortcut_flowtime_ << "," << post_shortcut_makespan_ 
-        << "," << t_init_ << "," << t_shortcut_ << "," << t_simplify_ << "," << t_shortcut_check_ << "," << num_shortcut_checks_ << std::endl;
+        << "," << t_init_ << "," << t_shortcut_ << "," << t_simplify_ << "," << t_shortcut_check_ << "," << num_shortcut_checks_
+        << "," << num_valid_shortcuts_ << std::endl;
     file.close();
 }
 
@@ -292,9 +294,9 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
     auto tic = std::chrono::high_resolution_clock::now();
     
     std::vector<std::vector<int>> earliest_t, latest_t;
-    std::vector<int> reached_end;
+    std::vector<int> reached_end, updated_reached_end;
+    findEarliestReachTime(earliest_t, reached_end);
     if (config_.tight_shortcut) {
-        findEarliestReachTime(earliest_t, reached_end);
         findLatestReachTime(latest_t, reached_end);
         findTightType2Edges(earliest_t, latest_t);
     }
@@ -352,24 +354,23 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         }
 
         if (config_.tight_shortcut) {
-            std::shared_ptr<Node> current = node_i->Type1Next;
+            std::shared_ptr<Node> current = node_i;
             bool has_tight_type2_edge = false;
             bool all_tight_type1_edge = (earliest_t[i][node_i->timeStep] == latest_t[i][node_i->timeStep]);
             while (current != node_j) {
-                if (earliest_t[i][current->timeStep] < latest_t[i][current->timeStep]) {
-                    all_tight_type1_edge = false;
-                }
+
                 for (auto edge : current->Type2Prev) {
-                    // std::cout << "tight type 2 edge from robot " << edge.nodeFrom->robotId << " at time " 
-                    //     << edge.nodeFrom->timeStep << " to robot " << edge.nodeTo->robotId << " at time " 
-                    //     << edge.nodeTo->timeStep << " is " << ((edge.tight) ? "tight" : "loose") << std::endl;
                     if (edge.tight) {
                         has_tight_type2_edge = true;
                         break;
                     }
                 }
                 current = current->Type1Next;
+                if (earliest_t[i][current->timeStep] < latest_t[i][current->timeStep]) {
+                    all_tight_type1_edge = false;
+                }
             }
+            
             if (!has_tight_type2_edge && !all_tight_type1_edge) {
                 auto toc = std::chrono::high_resolution_clock::now();
                 elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
@@ -394,19 +395,28 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
             log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
             
             updateTPG(node_i, node_j, shortcut_path, col_matrix);
+
+            // calculate statistics
+            findEarliestReachTime(earliest_t, updated_reached_end);
+            int flowtime_diff = 0;
+            for (int i = 0; i < num_robots_; i++) {
+                flowtime_diff += (reached_end[i] - updated_reached_end[i]); 
+            }
+            flowtime_improv_ += (flowtime_diff * dt_);
+
+            reached_end = updated_reached_end;
             if (config_.tight_shortcut) {
-                findEarliestReachTime(earliest_t, reached_end);
                 findLatestReachTime(latest_t, reached_end);
                 findTightType2Edges(earliest_t, latest_t);
             }
+            num_valid_shortcuts_++;
         }
 
         auto toc = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
     }
 
-    std::cout << "after random shortcuts ";
-    std::cout << hasCycle() << std::endl;
+    assert(hasCycle() == false);
 }
 
 bool TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
@@ -762,6 +772,29 @@ bool TPG::dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<st
         }
     }
     return false;
+}
+
+void TPG::findFlowtimeMakespan(double &flowtime, double &makespan)
+{
+    // trajectory_msgs::JointTrajectory joint_traj;
+    // size_t num_joints = 0;
+    // for (int i = 0; i < num_robots_; i++ ) {
+    //     num_joints += instance->getRobotDOF(i);
+    // }
+    // joint_traj.joint_names.resize(num_joints);
+    // setSyncJointTrajectory(joint_traj, flowtime, makespan);
+
+    std::vector<std::vector<int>> earliest_t, latest_t;
+    std::vector<int> reached_end;
+    findEarliestReachTime(earliest_t, reached_end);
+    int flowspan_i = 0, makespan_i = 0;
+    for (int i = 0; i < num_robots_; i++) {
+        flowspan_i += reached_end[i];
+        makespan_i = std::max(makespan_i, reached_end[i]);
+    }
+
+    flowtime = flowspan_i * dt_;
+    makespan = makespan_i * dt_;
 }
 
 void TPG::findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end)

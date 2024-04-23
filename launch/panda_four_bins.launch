@@ -45,7 +45,18 @@
 
             <param name="planning_time_limit" value="4.0" />
             <param name="benchmark" value="$(arg benchmark)" />
-            <param name="pose_name" value="grasp_1" />
+            <param name="pose_name" value="up" />
+            <param name="pose_name1" value="four_bins_1" />
+            <param name="pose_name2" value="four_bins_2" />
+            <param name="pose_name3" value="three_bins_1" />
+            <param name="pose_name4" value="three_bins_2" />
+            <param name="pose_name5" value="three_bins_3" />
+            <param name="pose_name6" value="purple_yellow_1" />
+            <param name="pose_name7" value="purple_yellow_2" />
+            <param name="pose_name8" value="red_green" />
+            <param name="pose_name9" value="blue" />
+            <param name="pose_name10" value="red" />
+
         </node>
     </group>
 

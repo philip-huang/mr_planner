@@ -18,7 +18,7 @@ def run_script(script_path, params):
 def eval_setting(robot_name, load_tpg, t, tight, random_shortcut, planner_name, planning_time_limit, ns):
     base_directory = f'/root/catkin_ws/src/mr_planner/outputs/'
     if load_tpg:
-        directory = base_directory + f't={t}_{"random" if random_shortcut else ""}_{("tight" if tight else "loose")}'
+        directory = base_directory + f't={t}_{"random" if random_shortcut else "iter"}_{("tight" if tight else "loose")}'
     else:
         directory = base_directory + f't={planning_time_limit}_{planner_name}'
     tpg_directory = base_directory + f'tpgs/t={planning_time_limit}_{planner_name}_{robot_name}'
@@ -61,14 +61,14 @@ def eval_setting(robot_name, load_tpg, t, tight, random_shortcut, planner_name, 
 # run the evaluations in parallel
 def add_planner_processes(envs, id = 0):
     processes = []
-        
+
     random_shortcut = True
     shortcut_time = 0.0
     load_tpg = False
     planning_time = 5.0
     tight = False
     for env in envs:
-        for planner_name, planning_time in [("RRTConnect", 5.0), ("AITstar", 15.0)]:
+        for planner_name, planning_time in [("RRTConnect", 5.0), ("BITstar", 15.0)]:
             ns = f'run_{id}'
             id += 1
             p = mp.Process(target=eval_setting, 
@@ -79,7 +79,7 @@ def add_planner_processes(envs, id = 0):
          
     return processes, id
 
-def add_tpg_processes(envs, id = 0):
+def add_tpg_processes(envs, shortcut_ts, id = 0):
     processes = []
 
     load_tpg = True
@@ -87,8 +87,8 @@ def add_tpg_processes(envs, id = 0):
     planning_time = 5.0
     planner_name = 'RRTConnect'
     for env in envs:
-        for shortcut_t in [0.1]:
-            for tight in [False]:
+        for shortcut_t in shortcut_ts:
+            for tight in [True, False]:
                 ns = f'run_{id}'
                 id += 1
                 p = mp.Process(target=eval_setting, 
@@ -96,10 +96,16 @@ def add_tpg_processes(envs, id = 0):
                 p.start()
                 processes.append(p)
                 time.sleep(1)
-    
+
+def add_baseline_processes(envs, id = 0):
+    processes = []
+
     # add baselines
+    load_tpg = True
     random_shortcut = False
     tight = False
+    planning_time = 5.0
+    planner_name = 'RRTConnect'
     for env in envs:
         ns = f'run_{id}'
         id += 1
@@ -112,13 +118,14 @@ def add_tpg_processes(envs, id = 0):
 
 
 if __name__ == "__main__":
-    envs = ["dual_gp4", "panda_two", "panda_three", "panda_four", "panda_two_rod"]
+    envs = ["dual_gp4"]
 
-    processes, id = add_planner_processes(envs)
-    for p in processes:
-        p.join()
+    # processes, id = add_planner_processes(envs)
+    # for p in processes:
+    #     p.join()
 
-    processes, id = add_tpg_processes(envs)
+    shortcut_ts = [0.01, 0.02, 0.05]
+    processes, id = add_tpg_processes(envs, shortcut_ts)
     for p in processes:
         p.join()
     

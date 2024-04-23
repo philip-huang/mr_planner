@@ -170,6 +170,7 @@ namespace TPG {
         void findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end);
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         void findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t);
+        void findFlowtimeMakespan(double &flowtime, double &makespan);
         bool checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void switchShortcuts();
@@ -205,6 +206,8 @@ namespace TPG {
         double t_simplify_ = 0.0;
         double t_shortcut_check_ = 0.0;
         int num_shortcut_checks_ = 0;
+        int num_valid_shortcuts_ = 0;
+        double flowtime_improv_ = 0.0;
         
     };
 

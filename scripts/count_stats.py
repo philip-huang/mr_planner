@@ -15,7 +15,7 @@ def average_improvement(df, out_df=None):
     # Append a row with the averages
     # calculate mean and average
     mean = df.select_dtypes(include=['float64', 'int64']).mean()
-    std = df.select_dtypes(include=['float64', 'int64']).mean()
+    std = df.select_dtypes(include=['float64', 'int64']).std()
     df.loc['Average'] = mean
     df.loc['Std Dev'] = std
 
