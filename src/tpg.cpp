@@ -263,7 +263,6 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
         }
     }
 
-    auto tic = std::chrono::high_resolution_clock::now();
 
     std::vector<std::vector<int>> earliest_t, latest_t;
     std::vector<int> reached_end, updated_reached_end;
@@ -272,6 +271,7 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
         findLatestReachTime(latest_t, reached_end);
         findTightType2Edges(earliest_t, latest_t);
     }
+    auto tic = std::chrono::high_resolution_clock::now();
 
 
     while (elapsed < runtime_limit) {
@@ -373,7 +373,6 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
     // randomly sample shortcuts and check if they are valid for time
     double elapsed = 0;
-    auto tic = std::chrono::high_resolution_clock::now();
     
     std::vector<std::vector<int>> earliest_t, latest_t;
     std::vector<int> reached_end, updated_reached_end;
@@ -383,7 +382,8 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         findTightType2Edges(earliest_t, latest_t);
     }
 
-    
+    auto tic = std::chrono::high_resolution_clock::now();
+
     while (elapsed < runtime_limit) {
         int i = std::rand() % num_robots_;
         int startNode = std::rand() % numNodes_[i];
@@ -967,6 +967,11 @@ void TPG::findLatestReachTime(std::vector<std::vector<int>> &reached_t, const st
         v.back() = reached_end[i];
         reached_t.push_back(v);
         j = std::max(j, reached_end[i]);
+    }
+    if (config_.tight_shortcut_makespan) {
+        for (int i = 0; i < num_robots_; i++) {
+            reached_t[i].back() = j;
+        }
     }
 
     bool allReached = false;

@@ -40,6 +40,7 @@ namespace TPG {
         bool ignore_far_collisions = false;
         bool helpful_shortcut = false;
         bool tight_shortcut = true;
+        bool tight_shortcut_makespan = true;
         double shortcut_time = 1;
         double dt = 0.1;
         double switch_shortcut = false;

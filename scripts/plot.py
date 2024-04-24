@@ -43,6 +43,7 @@ def read_csv(base_dir, dir1, dir2, env):
     df['t_check_avg_df2'] = df['t_check_df2'] / df['n_check_df2']
     df['valid_perc'] = df['n_valid'] / df['n_check_df2'] * 100
     df['flowtime_diff_per_step'] = (df['flowtime_pre_df2'] - df['flowtime_post_df2']) / df['n_valid']
+    df['makespan_diff_per_step'] = (df['makespan_pre_df2'] - df['makespan_post_df2']) / df['n_valid']
     
     return df
 
@@ -88,8 +89,8 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 # Plot the data
 env = 'panda_two'
 t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
-entries = [('g', 'loose', 'random'), ('b', 'loose', 'iter')]
-
+entries = [('g', 'loose', 'random'), ('b', 'loose', 'iter'), ('pink', 'tight', 'random')]
+metric = 'makespan'
 
 plt.figure(figsize=(8, 10))
 plt.title(f'{env}')
@@ -99,6 +100,8 @@ for color, tight, algo in entries:
     n_check = []
     n_valid = []
     flowtime_imp_per_step = []
+    makespan_imp_per_step = []
+    t_val_actual = []
     for t in t_values:
         # Read the data
         base_dir = '../outputs'
@@ -106,31 +109,33 @@ for color, tight, algo in entries:
         dir2 = f't={t}_{algo}_{tight}'
         df = read_csv(base_dir, dir1, dir2, env)
         
-        flowtime.append((df['flowtime_diff'].mean(), df['flowtime_diff'].std()))
+        flowtime.append((df[f'flowtime_diff'].mean(), df['flowtime_diff'].std()))
         makespan.append((df['makespan_diff'].mean(), df['makespan_diff'].std()))
         n_check.append((df['n_check_df2'].mean(), df['n_check_df2'].std()))
         n_valid.append((df['n_valid'].mean(), df['n_valid'].std()))
+        t_val_actual.append(df['t_shortcut_df2'].mean())
         flowtime_imp_per_step.append((df['flowtime_diff_per_step'].mean(), df['flowtime_diff_per_step'].std()))
+        makespan_imp_per_step.append((df['makespan_diff_per_step'].mean(), df['makespan_diff_per_step'].std()))
 
     # Plot the data with the specified color and label
     plt.subplot(4, 1, 1)
     
-    vals, stds = zip(*flowtime)
-    plt.scatter(t_values, vals, label=f'{algo}_{tight}', marker='x', color=color)
-    plt.fill_between(t_values, np.array(vals) - np.array(stds), np.array(vals) + np.array(stds), alpha=0.2, color=color)
+    vals, stds = zip(*makespan) if metric == 'makespan' else zip(*flowtime)
+    plt.scatter(t_val_actual, vals, label=f'{algo}_{tight}', marker='x', color=color)
+    plt.fill_between(t_val_actual, np.array(vals) - np.array(stds), np.array(vals) + np.array(stds), alpha=0.2, color=color)
     
     plt.subplot(4, 1, 2)
     # split array of tuple into two arrays
     vals, stds = zip(*n_check)
-    plt.scatter(t_values, vals, label=f'{algo}_{tight}', marker='x', color=color)
+    plt.scatter(t_val_actual, vals, label=f'{algo}_{tight}', marker='x', color=color)
 
     plt.subplot(4, 1, 3)
     vals, stds = zip(*n_valid)
-    plt.scatter(t_values, vals, label=f'{algo}_{tight}', marker='x', color=color)
+    plt.scatter(t_val_actual, vals, label=f'{algo}_{tight}', marker='x', color=color)
 
     plt.subplot(4, 1, 4)
-    vals, stds = zip(*flowtime_imp_per_step)
-    plt.scatter(t_values, vals, label=f'{algo}_{tight}', marker='x', color=color)
+    vals, stds = zip(*makespan_imp_per_step) if metric == 'makespan' else zip(*flowtime_imp_per_step)
+    plt.scatter(t_val_actual, vals, label=f'{algo}_{tight}', marker='x', color=color)
 
     
 
