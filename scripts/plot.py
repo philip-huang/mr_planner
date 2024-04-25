@@ -87,7 +87,7 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 
 
 # Plot the data
-env = 'panda_two'
+env = 'dual_gp4'
 t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
 entries = [('g', 'loose', 'random'), ('b', 'loose', 'iter'), ('pink', 'tight', 'random')]
 metric = 'makespan'
@@ -164,7 +164,7 @@ plt.ylabel('# Shortcut Valid')
 plt.subplot(4, 1, 4)
 plt.xscale('log')
 plt.xlabel('Time (s)')
-plt.ylabel('flow_improv_per_step')
+plt.ylabel('Improvment (s) per Step')
 
 plt.tight_layout()
 plt.savefig(f'../outputs/plots/{env}.png')

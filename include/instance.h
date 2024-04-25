@@ -8,6 +8,11 @@
 #include <actionlib/client/simple_action_client.h>
 #include <moveit_msgs/ExecuteTrajectoryAction.h>
 #include <moveit_msgs/ExecuteKnownTrajectory.h>
+
+#include <moveit_msgs/PlanningScene.h>
+#include <moveit_msgs/AttachedCollisionObject.h>
+#include <moveit_msgs/ApplyPlanningScene.h>
+
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/serialization.hpp>
 #include <boost/serialization/shared_ptr.hpp>
@@ -20,8 +25,69 @@
 #include <chrono>
 #include <atomic>
 #include <thread>
+#include <unordered_map>
+#include <set>
 
 // Abstract base class for the planning scene interface
+
+struct Object  {
+    
+    enum State {
+        Static = 0,
+        Attached = 1,
+        Supported = 2,
+    };
+    enum Shape {
+        Box = 0,
+        Sphere = 1,
+        Cylinder = 2,
+        Mesh = 3,
+    };
+
+    std::string name;
+    // mode of the object
+    State state;
+    std::string parent_link; 
+    int robot_id;
+
+    // geometry of the object
+    double x, y, z;
+    double qx = 0, qy = 0, qz = 0, qw = 1.0;
+    double x_attach, y_attach, z_attach;
+    double qx_attach = 0, qy_attach = 0, qz_attach = 0, qw_attach = 0;
+
+    // collision shape of the object
+    Shape shape;
+    double radius;
+    double length; // x
+    double width; // y
+    double height; // z
+    std::string mesh_path;
+};
+
+struct RobotMode {
+
+    enum Type {
+        Free = 0,
+        Carry = 1,
+        Hold = 2,
+    };
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & type;
+        ar & carried_obj;
+        ar & held_obj;
+        ar & ee_link;
+        ar & obj;
+    }
+    
+    Type type = Free;
+    std::string carried_obj;
+    std::string held_obj;
+    std::string ee_link;
+    std::shared_ptr<Object> obj;
+};
 
 struct RobotPose {
     template<class Archive>
@@ -32,6 +98,7 @@ struct RobotPose {
         ar & joint_values;
     }
     int robot_id;
+    RobotMode mode;
     std::string robot_name; // same as group name in moveit
     std::vector<double> joint_values;
 };
@@ -51,6 +118,7 @@ public:
     virtual bool sample(RobotPose &pose) = 0;
     virtual double getVMax(int robot_id);
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
+
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
 
@@ -91,17 +159,15 @@ protected:
     std::vector<size_t> robot_dof_;
     std::vector<RobotPose> goal_poses_;
     std::vector<std::string> robot_names_;
+    std::unordered_map<std::string, Object> objects_;
 };
 
 // Concrete implementation using MoveIt
 class MoveitInstance : public PlanInstance {
 public:
     MoveitInstance(robot_state::RobotStatePtr kinematic_state,
-                   std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
+                   const std::string &joint_group_name,
                    planning_scene::PlanningScenePtr planning_scene);
-    void updatePlanningScene(planning_scene::PlanningScenePtr planning_scene) {
-        planning_scene_ = planning_scene;
-    }
     virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const override;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
     virtual bool connect(const RobotPose& a, const RobotPose& b) override;
@@ -110,11 +176,22 @@ public:
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const override;
     // Implementation of abstract methods using MoveIt functionalities
 
+    virtual void addMoveableObject(const Object& obj);
+    virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name);
+    virtual void detachObjectFromRobot(const std::string& name);
+    virtual moveit_msgs::PlanningScene getPlanningSceneDiff() const {
+        return planning_scene_diff_;
+    }
+    virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow);
+
 private:
     // moveit move_group and planning_scene_interface pointers
+    std::string joint_group_name_;
     robot_state::RobotStatePtr kinematic_state_;
-    std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
     planning_scene::PlanningScenePtr planning_scene_;
+
+    /* store the planning scene diff temporarily*/
+    moveit_msgs::PlanningScene planning_scene_diff_;
 
     // random number generator
     std::mt19937 rng_;
