@@ -88,15 +88,15 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 
 
 # Plot the data
-env = 'panda_two'
+env = 'dual_gp4'
 t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
 #t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 #t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
-entries = [('g', 'x', 'loose', 'random', 'Random'),
-            ('b', 'o', 'loose', 'iter', 'Iterative'),
-            ('r', 's', 'loose', 'bwd_diter', 'Backward Double')]
-            # ('purple', 'D', 'loose', 'random', 'Random + Tight')]
-metric = 'flowtime'
+entries = [('b', 'o', 'loose', 'iter', 'Iterative'),
+            ('r', 's', 'loose', 'bwd_diter', 'Backward Double'),
+            ('g', 'x', 'loose', 'random', 'Random'),
+            ('purple', 'D', 'tight', 'random', 'Random + Tight')]
+metric = 'makespan'
 
 plt.figure(figsize=(8, 12))
 plt.title(f'{env}')
@@ -135,15 +135,15 @@ for color, marker, tight, algo, label in entries:
     plt.subplot(4, 1, 2)
     # split array of tuple into two arrays
     vals, stds = zip(*n_check)
-    plt.scatter(t_val_actual, vals, label=label, marker=marker, color=color)
+    plt.plot(t_val_actual, vals, label=label, marker=marker, color=color)
 
     plt.subplot(4, 1, 3)
     vals, stds = zip(*n_valid)
-    plt.scatter(t_val_actual, vals, label=label, marker=marker, color=color)
+    plt.plot(t_val_actual, vals, label=label, marker=marker, color=color)
 
     plt.subplot(4, 1, 4)
     vals, stds = zip(*makespan_imp_per_step) if metric == 'makespan' else zip(*flowtime_imp_per_step)
-    plt.scatter(t_val_actual, vals, label=label, marker=marker, color=color)
+    plt.plot(t_val_actual, vals, label=label, marker=marker, color=color)
 
     
 

@@ -123,6 +123,8 @@ namespace TPG {
         ar & t_simplify_;
         ar & t_shortcut_check_;
         ar & num_shortcut_checks_;
+        ar & num_valid_shortcuts_;
+        ar & flowtime_improv_;
         ar & collisionCheckMatrix_;
     }
     public:

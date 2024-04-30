@@ -18,6 +18,13 @@ void TPG::reset() {
     pre_shortcut_makespan_ = 0.0;
     post_shortcut_flowtime_ = 0.0;
     post_shortcut_makespan_ = 0.0;
+    t_shortcut_ = 0.0;
+    t_init_ = 0.0;
+    t_simplify_ = 0.0;
+    t_shortcut_check_ = 0.0;
+    num_shortcut_checks_ = 0;
+    num_valid_shortcuts_ = 0;
+    flowtime_improv_ = 0.0;
         
 }
 
@@ -282,7 +289,12 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
 
         if (config_.backward_doubleloop) {
             if (node_i == node_j) {
-                return;
+                q_i.push(start_nodes_[node_i->robotId]);
+                q_j.push(end_nodes_[node_i->robotId]);
+
+                auto toc = std::chrono::high_resolution_clock::now();
+                elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+                continue;
             }
             if (node_i->Type1Next == node_j) {
                 q_i.push(node_i->Type1Next);
@@ -297,10 +309,13 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
 
             if (node_j == nullptr) {
                 if (node_i->Type1Next == nullptr) {
-                    return;
+                    q_i.push(start_nodes_[node_i->robotId]);
+                    q_j.push(start_nodes_[node_i->robotId]->Type1Next);
                 }
-                q_i.push(node_i->Type1Next);
-                q_j.push(node_i->Type1Next->Type1Next);
+                else {
+                    q_i.push(node_i->Type1Next);
+                    q_j.push(node_i->Type1Next->Type1Next);
+                }
                 
                 auto toc = std::chrono::high_resolution_clock::now();
                 elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;

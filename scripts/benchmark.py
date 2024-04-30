@@ -73,7 +73,7 @@ def add_planner_processes(envs, id = 0):
     load_tpg = False
     tight = False
     for env in envs:
-        for planner_name, planning_time in [("BITstar", 100.0)]:
+        for planner_name, planning_time in [("RRTConnect", 5.0)]:
             ns = f'run_{id}'
             id += 1
             p = mp.Process(target=eval_setting, 
@@ -94,7 +94,7 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
     planner_name = 'RRTConnect'
     for env in envs:
         for shortcut_t in shortcut_ts:
-            for tight in [False]:
+            for tight in [True, False]:
                 ns = f'run_{id}'
                 id += 1
                 p = mp.Process(target=eval_setting, 
@@ -105,7 +105,7 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
                 time.sleep(1)
     return processes, id
 
-def add_baseline_processes(envs, shortcut_ts, loop_type, id = 0):
+def add_baseline_processes(envs, shortcut_ts, id = 0):
     processes = []
 
     # add baselines
@@ -115,32 +115,34 @@ def add_baseline_processes(envs, shortcut_ts, loop_type, id = 0):
     tight = False
     planning_time = 5.0
     planner_name = 'RRTConnect'
+    loop_types = ['iter', 'bwd_diter']
 
     for env in envs:
         for shortcut_t in shortcut_ts:
-            ns = f'run_{id}'
-            id += 1
-            p = mp.Process(target=eval_setting, 
-                            args=(ns, env, load_tpg, shortcut_t, tight, random_shortcut, planner_name, planning_time,
-                                loop_type))
-            p.start()
-            processes.append(p)
-            time.sleep(1)
+            for loop_type in loop_types:
+                ns = f'run_{id}'
+                id += 1
+                p = mp.Process(target=eval_setting, 
+                                args=(ns, env, load_tpg, shortcut_t, tight, random_shortcut, planner_name, planning_time,
+                                    loop_type))
+                p.start()
+                processes.append(p)
+                time.sleep(1)
     return processes, id
 
 
 if __name__ == "__main__":
-    envs = ["panda_four", "panda_three", "panda_two_rod", "panda_four_bins"]
+    envs = ["dual_gp4"]
 
-    # processes, id = add_planner_processes(envs)
-    # for p in processes:
-    #     p.join()
+    processes, id = add_planner_processes(envs)
+    for p in processes:
+        p.join()
 
-    shortcut_ts = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
-    # processes, id = add_tpg_processes(envs, shortcut_ts)
-    # for p in processes:
-    #    p.join()
+    shortcut_ts = [0.2, 0.5, 1.0, 2.0]
+    processes, id = add_tpg_processes(envs, shortcut_ts)
+    for p in processes:
+       p.join()
 
-    processes, id = add_baseline_processes(envs, shortcut_ts, 'bwd_diter')
+    processes, id = add_baseline_processes(envs, shortcut_ts)
     for p in processes:
         p.join()
