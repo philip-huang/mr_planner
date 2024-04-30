@@ -26,7 +26,7 @@
         </include>
 
         <!-- Start the demo test node -->
-        <node launch-prefix="xterm -e gdb --args" name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true">
+        <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true">
             <param name="num_robots" value="4" />
             <param name="movegroup_name" value="panda_multi_arm" />
             <param name="group_name_0" value="panda0_arm" />
