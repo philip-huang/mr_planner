@@ -768,6 +768,7 @@ int main(int argc, char** argv) {
     int task_idx = 1;
     std::string brick_name;
     std::string last_brick_name = "b2_5"; // TODO: fix this hardcoding
+    bool use_robot2 = false;
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
 
@@ -804,32 +805,54 @@ int main(int argc, char** argv) {
         }
         if (mode == 7) {
             adg->add_activity(0, TPG::Activity::Type::drop_tilt_up);
-            adg->add_activity(1, TPG::Activity::Type::home);\
+            adg->add_activity(1, TPG::Activity::Type::home);
         }
         if (mode == 8) {
             adg->add_activity(0, TPG::Activity::Type::drop_up);
-            adg->add_activity(1, TPG::Activity::Type::support);
+            if (poses[1].use_robot) {
+                use_robot2 = true;
+                adg->add_activity(1, TPG::Activity::Type::support);
+            } else {
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
         }
         if (mode == 9) {
-            adg->add_activity(0, TPG::Activity::Type::drop_down, adg->get_last_activity(1, TPG::Activity::Type::support));
-            adg->add_activity(1, TPG::Activity::Type::support);
+            if (use_robot2) {
+                adg->add_activity(0, TPG::Activity::Type::drop_down, adg->get_last_activity(1, TPG::Activity::Type::support));
+                adg->add_activity(1, TPG::Activity::Type::support);
+            } else {
+                adg->add_activity(0, TPG::Activity::Type::drop_down);
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
             planner.setCollision(last_brick_name, brick_name, true);
             last_brick_name = brick_name;
         }
         if (mode == 10) {
             ROS_INFO("detach lego from robot 0");
             adg->add_activity(0, TPG::Activity::Type::drop_twist);
-            adg->add_activity(1, TPG::Activity::Type::support);
+            if (use_robot2) {
+                adg->add_activity(1, TPG::Activity::Type::support);
+            } else {
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
             planner.detachMoveitCollisionObject(brick_name);
         }
         if (mode == 11) {
             Object obj = planner.getLegoTarget(task_idx);
             adg->add_activity(0, TPG::Activity::Type::drop_twist_up, obj);
-            adg->add_activity(1, TPG::Activity::Type::support);
+            if (use_robot2) {
+                adg->add_activity(1, TPG::Activity::Type::support);
+            } else {
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
         }
         if (mode == 12) {
             adg->add_activity(0, TPG::Activity::Type::home);
-            adg->add_activity(1, TPG::Activity::Type::home, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
+            if (poses[1].use_robot) {
+                adg->add_activity(1, TPG::Activity::Type::home, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
+            } else {
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
             planner.setCollision(brick_name, "left_arm_link_tool", false);
         }
 
@@ -854,6 +877,7 @@ int main(int argc, char** argv) {
         if (mode == 13) {
             mode = 0;
             task_idx ++;
+            use_robot2 = false;
         }
     }
     
