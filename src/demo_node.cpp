@@ -277,7 +277,7 @@ public:
     bool test(const std::string &pose_name, const TPG::TPGConfig &tpg_config) {
         bool success = true;
     
-        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group, planning_scene);
+        auto instance = std::make_shared<MoveitInstance>(kinematic_state, move_group->getName(), planning_scene);
         instance->setNumberOfRobots(num_robots);
         instance->setRobotNames(group_names);
         for (int i = 0; i < num_robots; i++) {

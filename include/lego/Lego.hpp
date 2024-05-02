@@ -149,6 +149,9 @@ class Lego
         bool robot_reached_goal(math::VectorJd robot_q, math::VectorJd goal, const int& robot_dof);
         Eigen::Matrix4d assemble_plate_pose() {return assemble_plate_.pose;};
         Eigen::Matrix4d storage_plate_pose() {return storage_plate_.pose;};
+        void calc_bric_asssemble_pose(const std::string &name, const int& brick_loc_x,
+                            const int& brick_loc_y, const int& brick_loc_z, const int& orientation,
+                            Eigen::Matrix4d& out_pose);
 
         std::vector<std::string> get_brick_names();
         geometry_msgs::Pose get_init_brick_pose(const std::string& brick_name);

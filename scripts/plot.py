@@ -36,7 +36,6 @@ def read_csv(base_dir, dir1, dir2, env):
     df2.rename(columns={'n_valid': 'n_valid_df2'}, inplace=True)
     # Merge the two dataframes on 'start_pose' and 'goal_pose'
     df = pd.merge(df1, df2, on=['start_pose', 'goal_pose'], suffixes=('_df1', '_df2'))
-    print(file2, df)
 
     # Compare the 'flowtime_pre' columns
     df['flowtime_diff'] = (df['flowtime_pre_df2'] - df['flowtime_post_df2']) / df['flowtime_pre_df2'] * 100
@@ -46,6 +45,9 @@ def read_csv(base_dir, dir1, dir2, env):
     df['flowtime_diff_per_step'] = (df['flowtime_pre_df2'] - df['flowtime_post_df2']) / df['n_valid_df2']
     df['makespan_diff_per_step'] = (df['makespan_pre_df2'] - df['makespan_post_df2']) / df['n_valid_df2']
     
+    df['flowtime_diff_per_step'] = df['flowtime_diff_per_step'].replace(-np.inf, np.nan).clip(lower=0)
+    df['makespan_diff_per_step'] = df['makespan_diff_per_step'].replace(-np.inf, np.nan).clip(lower=0)
+
     return df
 
 def read_motionplan_csv(base_dir, dir1, dir2, env):
@@ -88,8 +90,8 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 
 
 # Plot the data
-env = 'dual_gp4'
-t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+env = 'panda_three'
+t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 #t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 #t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 entries = [('b', 'o', 'loose', 'iter', 'Iterative'),
@@ -122,14 +124,14 @@ for color, marker, tight, algo, label in entries:
         n_check.append((df['n_check_df2'].mean(), df['n_check_df2'].std()))
         n_valid.append((df['n_valid_df2'].mean(), df['n_valid_df2'].std()))
         t_val_actual.append(df['t_shortcut_df2'].mean())
-        flowtime_imp_per_step.append((df['flowtime_diff_per_step'].mean(), df['flowtime_diff_per_step'].std()))
-        makespan_imp_per_step.append((df['makespan_diff_per_step'].mean(), df['makespan_diff_per_step'].std()))
+        flowtime_imp_per_step.append((df['flowtime_diff_per_step'].dropna().mean(), df['flowtime_diff_per_step'].dropna().std()))
+        makespan_imp_per_step.append((df['makespan_diff_per_step'].dropna().mean(), df['makespan_diff_per_step'].dropna().std()))
 
     # Plot the data with the specified color and label
     plt.subplot(4, 1, 1)
     
     vals, stds = zip(*makespan) if metric == 'makespan' else zip(*flowtime)
-    plt.scatter(t_val_actual, vals, label=label, marker=marker, color=color)
+    plt.plot(t_val_actual, vals, label=label, marker=marker, color=color)
     plt.fill_between(t_val_actual, np.array(vals) - np.array(stds), np.array(vals) + np.array(stds), alpha=0.2, color=color)
     
     plt.subplot(4, 1, 2)
@@ -149,7 +151,7 @@ for color, marker, tight, algo, label in entries:
 
 plt.subplot(4, 1, 1)
 df = read_motionplan_csv('../outputs/', 't=5.0_RRTConnect', 't=100.0_BITstar', env)
-ait_perc_improv = df['flowtime_diff'].mean()
+ait_perc_improv = df['flowtime_diff'].mean() if metric == 'flowtime' else df['makespan_diff'].mean()
 plt.axhline(y=ait_perc_improv, color='k', linestyle='--', label='BIT*')
 
 # log axis for x
@@ -157,13 +159,12 @@ plt.xscale('log')
 # lower bound the y axis to 0
 #plt.ylim(bottom=0)
 plt.ylabel('Improvement (%)')
-plt.legend()
-
 
 plt.subplot(4, 1, 2)
 plt.xscale('log')
 plt.yscale('log')
 plt.ylabel('# Shortcut Checked')
+plt.legend()
 
 plt.subplot(4, 1, 3)
 plt.xscale('log')

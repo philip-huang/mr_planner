@@ -2,9 +2,9 @@
 #include <logger.h>
 
 MoveitInstance::MoveitInstance(robot_state::RobotStatePtr kinematic_state,
-                               std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group,
+                               const std::string &joint_group_name,
                                planning_scene::PlanningScenePtr planning_scene)
-    : kinematic_state_(kinematic_state), move_group_(move_group), planning_scene_(planning_scene)
+    : kinematic_state_(kinematic_state), joint_group_name_(joint_group_name), planning_scene_(planning_scene)
 {}
 
 void PlanInstance::setNumberOfRobots(int num_robots) {
@@ -50,7 +50,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     /* true if has collision, false if no collision*/
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
-    c_req.group_name = move_group_->getName();
+    c_req.group_name = joint_group_name_;
 
     // set the robot state to the one we are checking
     moveit::core::RobotState robot_state = planning_scene_->getCurrentStateNonConst();
@@ -98,7 +98,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
         index += start_poses_[i].joint_values.size();
     }
 
-    robot_state.setJointGroupPositions(move_group_->getName(), all_joints);
+    robot_state.setJointGroupPositions(joint_group_name_, all_joints);
 
     c_res.clear();
     if (self) {
@@ -268,3 +268,220 @@ bool MoveitInstance::sample(RobotPose &pose) {
     return !in_collision;
 }
 
+void MoveitInstance::addMoveableObject(const Object& obj) {
+    moveit_msgs::CollisionObject co;
+    co.header.frame_id = obj.parent_link;
+    co.header.stamp = ros::Time::now();
+    co.id = obj.name;
+
+    objects_[obj.name] = obj;
+
+    shape_msgs::SolidPrimitive primitive;
+    if (obj.shape == Object::Shape::Box) {
+        primitive.type = primitive.BOX;
+        primitive.dimensions.resize(3);
+        primitive.dimensions[primitive.BOX_X] = obj.length;
+        primitive.dimensions[primitive.BOX_Y] = obj.width;
+        primitive.dimensions[primitive.BOX_Z] = obj.height;
+    } 
+    geometry_msgs::Pose world_pose;
+    world_pose.position.x = obj.x;
+    world_pose.position.y = obj.y;
+    world_pose.position.z = obj.z;
+    world_pose.orientation.x = obj.qx;
+    world_pose.orientation.y = obj.qy;
+    world_pose.orientation.z = obj.qz;
+    world_pose.orientation.w = obj.qw;
+        
+    co.primitives.push_back(primitive);
+    co.primitive_poses.push_back(world_pose);
+    co.operation = co.ADD;
+ 
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.world.collision_objects.push_back(co);
+    planning_scene.is_diff = true;
+
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+    
+    planning_scene_diff_ = planning_scene;
+}
+
+void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name) {
+    /*
+    directly attach the object to the robot
+    */
+    Object &obj = objects_[name];
+    obj.state = Object::State::Attached;
+    obj.robot_id = robot_id;
+    std::string old_parent_link = obj.parent_link;
+    obj.parent_link = link_name;
+
+    // calculate relative pose
+    // obj.x_attach = 0.006;
+    // obj.y_attach = 0.0;
+    // obj.z_attach = 0.07;
+
+    // update in moveit
+    moveit_msgs::AttachedCollisionObject co;
+    co.link_name = obj.parent_link;
+    co.object.header.frame_id = obj.parent_link;
+    co.object.header.stamp = ros::Time::now();
+    co.object.id = obj.name;
+    co.object.operation = co.object.ADD;
+
+    // geometry_msgs::Pose relative_pose;
+    // relative_pose.position.x = obj.x_attach;
+    // relative_pose.position.y = obj.y_attach;
+    // relative_pose.position.z = obj.z_attach;
+    // relative_pose.orientation.x = obj.qx_attach;
+    // relative_pose.orientation.y = obj.qy_attach;
+    // relative_pose.orientation.z = obj.qz_attach;
+    // relative_pose.orientation.w = obj.qw_attach;
+        
+    // shape_msgs::SolidPrimitive primitive;
+    // if (obj.shape == Object::Shape::Box) {
+    //     primitive.type = primitive.BOX;
+    //     primitive.dimensions.resize(3);
+    //     primitive.dimensions[primitive.BOX_X] = obj.length;
+    //     primitive.dimensions[primitive.BOX_Y] = obj.width;
+    //     primitive.dimensions[primitive.BOX_Z] = obj.height;
+    // } 
+
+    // co.object.primitives.push_back(primitive);
+    // co.object.primitive_poses.push_back(relative_pose);
+
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.is_diff = true;
+    if (old_parent_link == "world") {
+        moveit_msgs::CollisionObject co_remove;
+        co_remove.id = obj.name;
+        co_remove.header.frame_id = old_parent_link;
+        co_remove.operation = co_remove.REMOVE;
+        planning_scene.world.collision_objects.push_back(co_remove);
+    } else {
+        moveit_msgs::AttachedCollisionObject co_remove;
+        co_remove.object.id = obj.name;
+        co_remove.link_name = old_parent_link;
+        co_remove.object.operation = co_remove.object.REMOVE;
+        planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
+    }
+    planning_scene.robot_state.attached_collision_objects.push_back(co);
+    planning_scene.robot_state.is_diff = true;
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+    
+    planning_scene_diff_ = planning_scene;
+
+}
+
+void MoveitInstance::detachObjectFromRobot(const std::string& name) {
+    Object &obj = objects_[name];
+    obj.state = Object::State::Static;
+    obj.robot_id = 0;
+    std::string old_parent_link = obj.parent_link;
+
+    moveit_msgs::AttachedCollisionObject co_remove;
+    co_remove.object.id = obj.name;
+    co_remove.link_name = old_parent_link;
+    co_remove.object.operation = co_remove.object.REMOVE;
+
+    moveit_msgs::CollisionObject co;
+    co.id = obj.name;
+    co.header.frame_id = "world";
+    co.operation = co.ADD;
+
+    // geometry_msgs::Pose world_pose;
+    // world_pose.position.x = obj.x;
+    // world_pose.position.y = obj.y;
+    // world_pose.position.z = obj.z;
+    // world_pose.orientation.x = obj.qx;
+    // world_pose.orientation.y = obj.qy;
+    // world_pose.orientation.z = obj.qz;
+    // world_pose.orientation.w = obj.qw;
+        
+    // shape_msgs::SolidPrimitive primitive;
+    // if (obj.shape == Object::Shape::Box) {
+    //     primitive.type = primitive.BOX;
+    //     primitive.dimensions.resize(3);
+    //     primitive.dimensions[primitive.BOX_X] = obj.length;
+    //     primitive.dimensions[primitive.BOX_Y] = obj.width;
+    //     primitive.dimensions[primitive.BOX_Z] = obj.height;
+    // }
+
+    // co.object.primitives.push_back(primitive);
+    // co.object.primitive_poses.push_back(world_pose);
+
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.is_diff = true;
+    planning_scene.world.collision_objects.push_back(co);
+    planning_scene.robot_state.is_diff = true;
+    planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
+
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+
+    planning_scene_diff_ = planning_scene;
+
+}
+
+bool MoveitInstance::setCollision(const std::string& obj_name, const std::string& link_name, bool allow) {
+
+    // Get the Allowed Collision Matrix (ACM)
+    // Use the PlanningSceneMonitor to get the current planning scene
+
+    moveit_msgs::AllowedCollisionMatrix acm;
+    planning_scene_->getAllowedCollisionMatrixNonConst().getMessage(acm);
+
+    if (std::find(acm.entry_names.begin(), acm.entry_names.end(), obj_name) == acm.entry_names.end()) {
+        // object is not in the ACM, add a new row and column
+        acm.entry_names.push_back(obj_name);
+
+        // first visit all esiting rows and add a new column
+        for (size_t i = 0; i < acm.entry_values.size(); i++) {
+            if (acm.entry_names[i] == link_name) {
+                acm.entry_values[i].enabled.push_back(allow);
+            }
+            // by default we allow object to object collision
+            else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
+                acm.entry_values[i].enabled.push_back(true);
+            }
+            else {
+                acm.entry_values[i].enabled.push_back(false);
+            }
+        }
+        // add a new row
+        moveit_msgs::AllowedCollisionEntry new_entry;
+        for (size_t i = 0; i < acm.entry_names.size(); i++) {
+            if (acm.entry_names[i] == link_name) {
+                new_entry.enabled.push_back(allow);
+            }
+            else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
+                new_entry.enabled.push_back(true);
+            }
+            else {
+                new_entry.enabled.push_back(false);
+            }
+        }
+        acm.entry_values.push_back(new_entry);
+    }
+    else {
+        // directly modify the entry
+        for (size_t i = 0; i < acm.entry_names.size(); i++) {
+            for (size_t j = 0; j < acm.entry_names.size(); j++) {
+                if (acm.entry_names[i] == obj_name && acm.entry_names[j] == link_name) {
+                    acm.entry_values[i].enabled[j] = allow;
+                }
+                if (acm.entry_names[i] == link_name && acm.entry_names[j] == obj_name) {
+                    acm.entry_values[i].enabled[j] = allow;
+                }
+            }
+        }
+    }
+
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.is_diff = true;
+    planning_scene.allowed_collision_matrix = acm;
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+
+    planning_scene_diff_ = planning_scene;
+
+    return true;
+}
