@@ -475,7 +475,7 @@ public:
         }
         obj.x = box_pose.position.x;
         obj.y = box_pose.position.y;
-        obj.z = box_pose.position.z;
+        obj.z = box_pose.position.z - obj.height/2;
         obj.qx = box_pose.orientation.x;
         obj.qy = box_pose.orientation.y;
         obj.qz = box_pose.orientation.z;

@@ -287,7 +287,7 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
     geometry_msgs::Pose world_pose;
     world_pose.position.x = obj.x;
     world_pose.position.y = obj.y;
-    world_pose.position.z = obj.z;
+    world_pose.position.z = obj.z ;
     world_pose.orientation.x = obj.qx;
     world_pose.orientation.y = obj.qy;
     world_pose.orientation.z = obj.qz;

@@ -1048,16 +1048,16 @@ geometry_msgs::Pose Lego::get_table_pose()
 
 void Lego::get_brick_sizes(const std::string& brick_name, double& x, double &y, double& z)
 {
-    x = brick_map_[brick_name].height * P_len_;
-    y = brick_map_[brick_name].width * P_len_;
-    z = brick_height_m_ + knob_height_;
+    x = brick_map_[brick_name].height * P_len_ - brick_len_offset_;
+    y = brick_map_[brick_name].width * P_len_ - brick_len_offset_;
+    z = brick_height_m_;
 }
 
 void Lego::get_table_size(double& x, double& y, double& z)
 {
     x = table_width_;
     y = table_length_;
-    z = 0.005;
+    z = 0.01;
 }
 
 void Lego::calc_bric_asssemble_pose(const std::string &name, const int& brick_loc_x,
