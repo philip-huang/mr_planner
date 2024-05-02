@@ -1514,7 +1514,7 @@ void TPG::update_joint_states(const std::vector<double> &joint_states, int robot
         for (int i = 0; i < joint_states_[robot_id].size(); i++) {
             error += std::abs(joint_states_[robot_id][i] - node_i->pose.joint_values[i]);
         }
-        if (error < 0.05) {
+        if (error < 0.1) {
             executed_steps_[robot_id]->fetch_add(1);
             log("Robot " + std::to_string(robot_id) + " reached step " + std::to_string(next_step), LogLevel::DEBUG);
         }
