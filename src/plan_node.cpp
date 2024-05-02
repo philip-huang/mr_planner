@@ -527,6 +527,52 @@ public:
         brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
     }
 
+    Object getLegoStart(int task_idx) {
+        auto cur_graph_node = task_json_[std::to_string(task_idx)];
+        std::string brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
+
+        geometry_msgs::Pose box_pose = lego_ptr_->get_init_brick_pose(brick_name);
+        Object obj = instance_->getObject(brick_name);
+        // define the object
+        obj.state = Object::State::Static;
+        obj.parent_link = "world";
+
+        obj.x = box_pose.position.x;
+        obj.y = box_pose.position.y;
+        obj.z = box_pose.position.z;
+        obj.qx = box_pose.orientation.x;
+        obj.qy = box_pose.orientation.y;
+        obj.qz = box_pose.orientation.z;
+        obj.qw = box_pose.orientation.w;
+
+        return obj;
+    }
+
+    Object getLegoTarget(int task_idx) {
+        auto cur_graph_node =  task_json_[std::to_string(task_idx)];
+        std::string brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
+
+        Eigen::Matrix4d brick_pose_mtx;
+        lego_ptr_->calc_bric_asssemble_pose(brick_name, cur_graph_node["x"].asInt(), cur_graph_node["y"].asInt(),
+                 cur_graph_node["z"].asInt(), cur_graph_node["ori"].asInt(), brick_pose_mtx);
+        
+        Object obj = instance_->getObject(brick_name);
+        // define the object
+        obj.state = Object::State::Static;
+        obj.parent_link = "world";
+
+        obj.x = brick_pose_mtx(0, 3);
+        obj.y = brick_pose_mtx(1, 3);
+        obj.z = brick_pose_mtx(2, 3);
+        Eigen::Quaterniond quat(brick_pose_mtx.block<3, 3>(0, 0));
+        obj.qx = quat.x();
+        obj.qy = quat.y();
+        obj.qz = quat.z();
+        obj.qw = quat.w();
+
+        return obj;
+    }
+
     bool setCollision(const std::string& object_id, const std::string& link_name, bool allow) {
         instance_->setCollision(object_id, link_name, allow);
 
@@ -710,7 +756,8 @@ int main(int argc, char** argv) {
             planner.setCollision("table", "left_arm_link_tool", false);
         }
         if (mode == 1) {
-            adg->add_activity(0, TPG::Activity::Type::pick_tilt_up);
+            Object obj = planner.getLegoStart(task_idx);
+            adg->add_activity(0, TPG::Activity::Type::pick_tilt_up, obj);
             adg->add_activity(1, TPG::Activity::Type::home);
             planner.getLegoBrickName(task_idx, brick_name);
             planner.setCollision(brick_name, "left_arm_link_tool", true);
@@ -736,7 +783,7 @@ int main(int argc, char** argv) {
         }
         if (mode == 7) {
             adg->add_activity(0, TPG::Activity::Type::drop_tilt_up);
-            adg->add_activity(1, TPG::Activity::Type::home);
+            adg->add_activity(1, TPG::Activity::Type::home);\
         }
         if (mode == 8) {
             adg->add_activity(0, TPG::Activity::Type::drop_up);
@@ -755,7 +802,8 @@ int main(int argc, char** argv) {
             planner.detachMoveitCollisionObject(brick_name);
         }
         if (mode == 11) {
-            adg->add_activity(0, TPG::Activity::Type::drop_twist_up);
+            Object obj = planner.getLegoTarget(task_idx);
+            adg->add_activity(0, TPG::Activity::Type::drop_twist_up, obj);
             adg->add_activity(1, TPG::Activity::Type::support);
         }
         if (mode == 12) {
@@ -770,7 +818,7 @@ int main(int argc, char** argv) {
             if (tpg != nullptr) {
                 planner.set_tpg(tpg);
                 planner.reset_joint_states_flag(); // do this after tpg is set
-                planner.execute(tpg);
+                //planner.execute(tpg);
             }
         }
         else {
@@ -795,10 +843,11 @@ int main(int argc, char** argv) {
         ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
         return false;
     }
-    boost::archive::text_oarchive oa(ofs);
-    oa << adg;
-    //planner.reset_joint_states_flag();
-    //planner.execute(adg);
+    adg->saveADGToDotFile(output_dir + "/adg.dot");
+    // boost::archive::text_oarchive oa(ofs);
+    // oa << adg;
+    planner.reset_joint_states_flag();
+    planner.execute(adg);
 
     ros::shutdown();
     return 0;

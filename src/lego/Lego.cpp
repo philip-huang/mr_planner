@@ -1060,6 +1060,22 @@ void Lego::get_table_size(double& x, double& y, double& z)
     z = 0.005;
 }
 
+void Lego::calc_bric_asssemble_pose(const std::string &name, const int& brick_loc_x,
+        const int& brick_loc_y, const int& brick_loc_z, const int& orientation,
+        Eigen::Matrix4d& out_pose) 
+{
+    lego_brick l_brick = brick_map_[name];
+    calc_brick_loc(l_brick, assemble_plate_, orientation, brick_loc_x, brick_loc_y, brick_loc_z, out_pose);
+
+    Eigen::Matrix4d y_180;
+    y_180 << -1, 0, 0, 0,
+             0, 1, 0, 0,
+             0, 0, -1, 0,
+             0, 0, 0, 1;
+
+    out_pose = out_pose * y_180;
+}
+
 }
 
 }

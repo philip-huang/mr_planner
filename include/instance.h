@@ -153,6 +153,10 @@ public:
     
     }
 
+    virtual Object getObject(const std::string& name) const {
+        return objects_.at(name);
+    }
+
 protected:
     int num_robots_;
     std::vector<RobotPose> start_poses_;
