@@ -241,6 +241,7 @@ public:
         // Use the PlanningSceneMonitor to update and get the current planning scene
 
         PlannerOptions options;
+        options.max_planning_time = 2.0;
         success &= pp_planner_->plan(options);
         if (success) {
             ROS_INFO("Prioritized Planning succeeded");
@@ -634,8 +635,8 @@ public:
         return instance_;
     }
 
-    std::shared_ptr<TPG::TPG> getTPG() {
-        return tpg_;
+    std::shared_ptr<TPG::TPG> copyCurrentTPG() {
+        return std::make_shared<TPG::TPG>(*tpg_);
     }
 
 
@@ -701,6 +702,7 @@ int main(int argc, char** argv) {
     bool async = false;
     bool mfi = false;
     bool load_tpg = false;
+    bool load_adg = false;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
@@ -715,11 +717,13 @@ int main(int argc, char** argv) {
     nh.param<bool>("async", async, false);
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
+    nh.param<bool>("load_adg", load_adg, false);
 
     // Initialize the DUal Arm Planner
     setLogLevel(LogLevel::INFO);
 
     TPG::TPGConfig tpg_config;
+    tpg_config.shortcut_time = 0.1;
 
     DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
 
@@ -742,6 +746,23 @@ int main(int argc, char** argv) {
 
     // Start Execution Loop
     auto adg = std::make_shared<TPG::ADG>(2);
+    if (load_adg) {
+        // open the file safely
+        std::string filename = output_dir + "/adg.txt";
+        std::ifstream ifs(filename);
+        if (!ifs.is_open()) {
+            ROS_ERROR("Failed to open file: %s", filename.c_str());
+            return -1;
+        }
+        boost::archive::text_iarchive ia(ifs);
+        ia >> adg;
+        planner.reset_joint_states_flag();
+        planner.execute(adg);
+
+        ros::shutdown();
+        return 0;
+    }
+
     std::vector<std::shared_ptr<TPG::TPG>> tpgs;
     int mode = 1;
     int task_idx = 1;
@@ -826,7 +847,7 @@ int main(int argc, char** argv) {
             planner.planAndMove(poses, tpg_config);
         }
 
-        std::shared_ptr<TPG::TPG> tpg = planner.getTPG(); 
+        std::shared_ptr<TPG::TPG> tpg = planner.copyCurrentTPG(); 
         tpgs.push_back(tpg);
 
         mode ++;
@@ -836,16 +857,20 @@ int main(int argc, char** argv) {
         }
     }
     
-    // create and save the adg
+    // create adg
     adg->init(planner.getInstance(), tpg_config, tpgs);
+
+    // save adg
+    ROS_INFO("Saving ADG to file");
+    adg->saveADGToDotFile(output_dir + "/adg.dot");
     std::ofstream ofs(output_dir + "/adg.txt");
     if (!ofs.is_open()) {
         ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
-        return false;
+        return -1;
     }
-    adg->saveADGToDotFile(output_dir + "/adg.dot");
-    // boost::archive::text_oarchive oa(ofs);
-    // oa << adg;
+    boost::archive::text_oarchive oa(ofs);
+    oa << adg;
+
     planner.reset_joint_states_flag();
     planner.execute(adg);
 

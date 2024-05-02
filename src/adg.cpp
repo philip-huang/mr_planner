@@ -124,8 +124,6 @@ bool ADG::init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, 
         for (int activity_id = 0; activity_id < activities_[i].size(); activity_id++) {
             auto act = get_activity(i, activity_id);
             for (auto dep : act->type2_prev) {
-                std::cout << "activity: " << act->robot_id << " " << act->activity_id << " " << act->type
-                     << " depends on " << dep->robot_id << " " << dep->activity_id << " " << dep->type << std::endl;
                 type2Edge edge;
                 edge.edgeId = idType2Edges_++;
                 assert(dep->end_node != nullptr);
@@ -196,6 +194,7 @@ bool ADG::init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, 
         log("Naive TPG already has cycle", LogLevel::ERROR);
         return false;
     }
+    log("ADG initialized", LogLevel::HLINFO);
     
     return true;
 }

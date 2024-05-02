@@ -22,6 +22,8 @@ namespace TPG {
             ar & type1_next;
             ar & start_node;
             ar & end_node;
+            ar & obj_placed;
+            ar & obj_picked;
         }
 
         enum Type {
@@ -75,6 +77,7 @@ namespace TPG {
             ar & prev_place;
             ar & next_pick;
         }
+        ObjectNode() = default;
         ObjectNode(const Object &obj, int id) : obj(obj), obj_node_id(id) {}
 
         Object obj;
@@ -91,8 +94,11 @@ namespace TPG {
     {
         ar & boost::serialization::base_object<TPG>(*this);
         ar & activities_;
+        ar & obj_nodes_;
     }
     public:
+        ADG () = default;
+    
         ADG(int num_robots);
         
         void add_activity(int robot_id, Activity::Type type);

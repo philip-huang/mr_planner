@@ -129,6 +129,8 @@ namespace TPG {
     }
     public:
         TPG() = default;
+        // copy constructor
+        TPG(const TPG &tpg);
         void reset();
         virtual bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
         virtual bool optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &config);

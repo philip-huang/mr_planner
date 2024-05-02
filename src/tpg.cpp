@@ -28,6 +28,27 @@ void TPG::reset() {
         
 }
 
+TPG::TPG(const TPG &tpg) {
+    config_ = tpg.config_;
+    dt_ = tpg.dt_;
+    num_robots_ = tpg.num_robots_;
+    type2Edges_ = tpg.type2Edges_;
+    start_nodes_ = tpg.start_nodes_;
+    end_nodes_ = tpg.end_nodes_;
+    numNodes_ = tpg.numNodes_;
+    solution_ = tpg.solution_;
+    pre_shortcut_flowtime_ = tpg.pre_shortcut_flowtime_;
+    pre_shortcut_makespan_ = tpg.pre_shortcut_makespan_;
+    post_shortcut_flowtime_ = tpg.post_shortcut_flowtime_;
+    post_shortcut_makespan_ = tpg.post_shortcut_makespan_;
+    t_shortcut_ = tpg.t_shortcut_;
+    t_init_ = tpg.t_init_;
+    t_simplify_ = tpg.t_simplify_;
+    t_shortcut_check_ = tpg.t_shortcut_check_;
+    num_shortcut_checks_ = tpg.num_shortcut_checks_;
+    collisionCheckMatrix_ = tpg.collisionCheckMatrix_;
+}
+
 bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution,
     const TPGConfig &config) {
     dt_ = config.dt;
