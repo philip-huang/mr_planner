@@ -31,6 +31,27 @@
 // Abstract base class for the planning scene interface
 
 struct Object  {
+    template<class Archive>
+    void serialize(Archive & ar, const unsigned int version)
+    {
+        ar & name;
+        ar & state;
+        ar & parent_link;
+        ar & robot_id;
+        ar & x;
+        ar & y;
+        ar & z;
+        ar & qx;
+        ar & qy;
+        ar & qz;
+        ar & qw;
+        ar & shape;
+        ar & radius;
+        ar & length;
+        ar & width;
+        ar & height;
+        ar & mesh_path;
+    }    
     
     enum State {
         Static = 0,
