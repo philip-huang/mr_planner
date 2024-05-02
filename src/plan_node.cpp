@@ -756,6 +756,7 @@ int main(int argc, char** argv) {
         }
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
+        planner.set_tpg(adg);
         planner.reset_joint_states_flag();
         planner.execute(adg);
 
@@ -895,6 +896,7 @@ int main(int argc, char** argv) {
     boost::archive::text_oarchive oa(ofs);
     oa << adg;
 
+    planner.set_tpg(adg);
     planner.reset_joint_states_flag();
     planner.execute(adg);
 
