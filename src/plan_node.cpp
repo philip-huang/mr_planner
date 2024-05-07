@@ -807,12 +807,16 @@ int main(int argc, char** argv) {
         }
         if (mode == 7) {
             adg->add_activity(0, TPG::Activity::Type::drop_tilt_up);
-            adg->add_activity(1, TPG::Activity::Type::home);
+            if (poses[1].use_robot) {
+                use_robot2 = true;
+                adg->add_activity(1, TPG::Activity::Type::support);
+            } else {
+                adg->add_activity(1, TPG::Activity::Type::home);
+            }
         }
         if (mode == 8) {
             adg->add_activity(0, TPG::Activity::Type::drop_up);
             if (poses[1].use_robot) {
-                use_robot2 = true;
                 planner.setCollision(last_brick_name, "right_arm_link_tool", true);
                 adg->add_activity(1, TPG::Activity::Type::support);
             } else {
