@@ -16,6 +16,7 @@ const std::map<Activity::Type, std::string> Activity::enumStringMap = {
     {Activity::Type::drop_twist, "drop_twist"},
     {Activity::Type::drop_twist_up, "drop_twist_up"},
     {Activity::Type::support, "support"},
+    {Activity::Type::support_pre, "support_pre"},
 };
 
 ADG::ADG(int num_robots) {

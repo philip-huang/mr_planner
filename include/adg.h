@@ -39,6 +39,7 @@ namespace TPG {
             drop_twist = 10,
             drop_twist_up = 11,
             support = 13,
+            support_pre = 14,
         };
 
         static const std::map<Type, std::string> enumStringMap;
