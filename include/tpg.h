@@ -34,6 +34,7 @@ namespace TPG {
     struct TPGConfig {
         bool shortcut = true;
         bool random_shortcut = true;
+        bool biased_sample = true;
         bool forward_doubleloop = false;
         bool backward_doubleloop = false;
         bool forward_singleloop = true;
@@ -100,6 +101,27 @@ namespace TPG {
         std::shared_ptr<Node> nodeTo;   ///< Pointer to the Node to which this edge leads
     };
 
+    class ShortcutSampler {
+    public:
+        ShortcutSampler(const TPGConfig &config);
+        void init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes);
+
+        bool sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
+        void updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, bool static_collision);
+    
+    private:
+        bool sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
+        bool sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
+
+        bool biased_ = false;
+        int num_robots_ = 0;
+        std::vector<std::vector<std::shared_ptr<Node>>> nodes_;
+        std::vector<int> numNodes_;
+        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_;
+        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_static_;
+        std::vector<std::vector<double>> sample_prob_;
+        double scale_ = 10.0;
+    };
 
     class TPG {
     friend class boost::serialization::access;

@@ -15,13 +15,13 @@ def run_script(script_path, params):
     script = subprocess.Popen(['python3', script_path, *['--{}={}'.format(k, v) for k, v in params.items()]])
     script.wait()
 
-def eval_setting(ns, robot_name, load_tpg, t, tight, random_shortcut, planner_name, planning_time_limit,
+def eval_setting(ns, robot_name, load_tpg, t, tight, biased, random_shortcut, planner_name, planning_time_limit,
                  loop_type):
     assert loop_type in ['fwd_diter', 'bwd_diter', 'iter']
 
     base_directory = f'/root/catkin_ws/src/mr_planner/outputs/'
     if load_tpg:
-        directory = base_directory + f't={t}_{"random" if random_shortcut else loop_type}_{("tight" if tight else "loose")}'
+        directory = base_directory + f't={t}_{"random" if random_shortcut else loop_type}_{("tight" if tight else "loose")}{"_biased" if biased else ""}'
     else:
         directory = base_directory + f't={planning_time_limit}_{planner_name}'
     tpg_directory = base_directory + f'tpgs/t={planning_time_limit}_{planner_name}_{robot_name}'
@@ -69,6 +69,7 @@ def add_planner_processes(envs, id = 0):
     processes = []
 
     random_shortcut = True
+    biased = False
     shortcut_time = 0.0
     load_tpg = False
     tight = False
@@ -77,7 +78,7 @@ def add_planner_processes(envs, id = 0):
             ns = f'run_{id}'
             id += 1
             p = mp.Process(target=eval_setting, 
-                            args=(ns, env, load_tpg, shortcut_time, tight, random_shortcut, 
+                            args=(ns, env, load_tpg, shortcut_time, tight, biased, random_shortcut, 
                                   planner_name, planning_time, 'iter'))
             p.start()
             processes.append(p)
@@ -90,15 +91,16 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
 
     load_tpg = True
     random_shortcut = True
+    biased = True
     planning_time = 5.0
     planner_name = 'RRTConnect'
     for env in envs:
         for shortcut_t in shortcut_ts:
-            for tight in [True, False]:
+            for tight in [False]:
                 ns = f'run_{id}'
                 id += 1
                 p = mp.Process(target=eval_setting, 
-                                args=(ns, env, load_tpg, shortcut_t, tight, random_shortcut, 
+                                args=(ns, env, load_tpg, shortcut_t, tight, biased, random_shortcut, 
                                       planner_name, planning_time, 'iter'))
                 p.start()
                 processes.append(p)
@@ -113,6 +115,7 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
     random_shortcut = False
 
     tight = False
+    biased = False
     planning_time = 5.0
     planner_name = 'RRTConnect'
     loop_types = ['iter', 'bwd_diter']
@@ -123,7 +126,7 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
                 ns = f'run_{id}'
                 id += 1
                 p = mp.Process(target=eval_setting, 
-                                args=(ns, env, load_tpg, shortcut_t, tight, random_shortcut, planner_name, planning_time,
+                                args=(ns, env, load_tpg, shortcut_t, tight, biased, random_shortcut, planner_name, planning_time,
                                     loop_type))
                 p.start()
                 processes.append(p)
@@ -132,17 +135,17 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
 
 
 if __name__ == "__main__":
-    envs = ["dual_gp4"]
+    envs = ["panda_two", "panda_three", "panda_two_rod", "panda_four", "panda_four_bins"]
 
-    processes, id = add_planner_processes(envs)
-    for p in processes:
-        p.join()
+    # processes, id = add_planner_processes(envs)
+    # for p in processes:
+    #     p.join()
 
-    shortcut_ts = [0.2, 0.5, 1.0, 2.0]
+    shortcut_ts = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
     processes, id = add_tpg_processes(envs, shortcut_ts)
     for p in processes:
        p.join()
 
-    processes, id = add_baseline_processes(envs, shortcut_ts)
-    for p in processes:
-        p.join()
+    # processes, id = add_baseline_processes(envs, shortcut_ts)
+    # for p in processes:
+    #     p.join()

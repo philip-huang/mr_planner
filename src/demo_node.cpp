@@ -516,6 +516,7 @@ int main(int argc, char** argv) {
     tpg_config.forward_doubleloop = false;
     tpg_config.backward_doubleloop = false;
     tpg_config.forward_singleloop = true;
+    tpg_config.biased_sample = false;
     if (nh_private.hasParam("shortcut_time")) {
         nh_private.getParam("shortcut_time", tpg_config.shortcut_time);
     }
@@ -533,6 +534,9 @@ int main(int argc, char** argv) {
     }
     if (nh_private.hasParam("forward_singleloop")) {
         nh_private.getParam("forward_singleloop", tpg_config.forward_singleloop);
+    }
+    if (nh_private.hasParam("biased_sample")) {
+        nh_private.getParam("biased_sample", tpg_config.biased_sample);
     }
 
     std::vector<std::string> pose_names = {pose_name};

@@ -90,14 +90,15 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 
 
 # Plot the data
-env = 'panda_three'
-t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+env = 'dual_gp4'
+t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
 #t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 #t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 entries = [('b', 'o', 'loose', 'iter', 'Iterative'),
             ('r', 's', 'loose', 'bwd_diter', 'Backward Double'),
             ('g', 'x', 'loose', 'random', 'Random'),
-            ('purple', 'D', 'tight', 'random', 'Random + Tight')]
+            ('purple', 'D', 'tight', 'random', 'Random + Tight'),
+            ('orange', 'P', 'loose_biased', 'random', 'Random + Biased')]
 metric = 'makespan'
 
 plt.figure(figsize=(8, 12))

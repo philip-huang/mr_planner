@@ -3,6 +3,86 @@
 
 namespace TPG {
 
+ShortcutSampler::ShortcutSampler(const TPGConfig &config) {
+    biased_ = config.biased_sample; 
+}
+
+void ShortcutSampler::init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes) {
+    num_robots_ = start_nodes.size();
+    nodes_.resize(num_robots_);
+    for (int i = 0; i < num_robots_; i++) {
+        std::shared_ptr<Node> node = start_nodes[i];
+        std::vector<std::shared_ptr<Node>> nodes_i;
+        while (node != nullptr) {
+            nodes_i.push_back(node);
+            node = node->Type1Next;
+        }
+        nodes_[i] = nodes_i;
+    }
+    numNodes_ = numNodes;
+
+    failed_shortcuts_.clear();
+}
+
+bool ShortcutSampler::sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
+    if (!biased_) {
+        return sampleUniform(ni, nj);
+    }
+    else {
+        return sampleBiased(ni, nj);
+    }
+}
+
+bool ShortcutSampler::sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
+    int i = std::rand() % num_robots_;
+    int startNode = std::rand() % numNodes_[i];
+    int endNode = std::rand() % numNodes_[i];
+    if (endNode <= 1 || startNode >= endNode - 1) {
+        return false;
+    }
+
+    ni = nodes_[i][startNode];
+    nj = nodes_[i][endNode];
+    return true;
+}
+
+bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
+    int i = std::rand() % num_robots_;
+    int startNode = std::rand() % numNodes_[i];
+    int endNode = std::rand() % numNodes_[i];
+    if (endNode <= 1 || startNode >= endNode - 1) {
+        return false;
+    }
+
+    double prob = 1;
+    for (int k = 0; k < failed_shortcuts_.size(); k++) {
+        if (failed_shortcuts_[k].first->robotId == i) {
+            int s = failed_shortcuts_[k].first->timeStep;
+            int e = failed_shortcuts_[k].second->timeStep;
+            double prob_k = std::max(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            prob = prob * prob_k;
+        }
+    }
+    
+    // drop the sample based on the probability
+    if (std::rand() % 1000 >= prob * 1000) {
+        return false;
+    }
+    ni = nodes_[i][startNode];
+    nj = nodes_[i][endNode];
+    return true;
+}
+
+
+void ShortcutSampler::updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, bool static_collision) {
+    if (static_collision) {
+        failed_shortcuts_static_.push_back(std::make_pair(ni, nj));
+    }
+    else {
+        failed_shortcuts_.push_back(std::make_pair(ni, nj));
+    }
+}
+
 void TPG::reset() {
     start_nodes_.clear();
     end_nodes_.clear();
@@ -418,30 +498,23 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         findTightType2Edges(earliest_t, latest_t);
     }
 
+    ShortcutSampler sampler(config_);
+    sampler.init(start_nodes_, numNodes_);
+
     auto tic = std::chrono::high_resolution_clock::now();
 
     while (elapsed < runtime_limit) {
-        int i = std::rand() % num_robots_;
-        int startNode = std::rand() % numNodes_[i];
-        if (startNode >= numNodes_[i] - 2) {
+        std::shared_ptr<Node> node_i, node_j;
+        bool valid = sampler.sample(node_i, node_j);
+        if (!valid) {
             auto toc = std::chrono::high_resolution_clock::now();
             elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
             continue;
         }
-        int length = std::rand() % (numNodes_[i] - startNode - 2) + 2;
-        
-        std::shared_ptr<Node> node_i = start_nodes_[i];
-        for (int j = 0; j < startNode; j++) {
-            node_i = node_i->Type1Next;
-            assert(node_i != nullptr);
-        }
-        std::shared_ptr<Node> node_j = node_i;
-        for (int j = 0; j < length; j++) {
-            node_j = node_j->Type1Next;
-            assert(node_j != nullptr);
-        }
+        assert (node_i != nullptr && node_j != nullptr);
 
-        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[i], latest_t[i]);
+        int robot_id = node_i->robotId;
+        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
         if (pre_check) {
             std::vector<Eigen::MatrixXi> col_matrix;
             std::vector<RobotPose> shortcut_path;
@@ -455,10 +528,11 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
             if (valid) {
                 // add the shortcut
-                log("found shortcut for robot " + std::to_string(i) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
+                log("found shortcut for robot " + std::to_string(robot_id) + " of length " + std::to_string(shortcut_path.size()), LogLevel::DEBUG);
                 log("from " + std::to_string(node_i->timeStep) + " to " + std::to_string(node_j->timeStep), LogLevel::DEBUG);
                 
                 updateTPG(node_i, node_j, shortcut_path, col_matrix);
+                sampler.init(start_nodes_, numNodes_);
 
                 // calculate statistics
                 findEarliestReachTime(earliest_t, updated_reached_end);

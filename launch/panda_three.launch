@@ -15,6 +15,7 @@
     <arg name="forward_doubleloop" default="false" />
     <arg name="backward_doubleloop" default="false" />
     <arg name="forward_singleloop" default="true" />
+    <arg name="biased_sample" default="false" />
 
     <group ns="$(arg ns)">
         <!-- Start the robot state publisher, simulation, and controler -->
@@ -48,6 +49,7 @@
             <param name="forward_doubleloop" value="$(arg forward_doubleloop)" />
             <param name="backward_doubleloop" value="$(arg backward_doubleloop)" />
             <param name="forward_singleloop" value="$(arg forward_singleloop)" />
+            <param name="biased_sample" value="$(arg biased_sample)" />
 
             <param name="pose_name" value="wall1_pose" />
             <param name="pose_name1" value="shelf_0" />
