@@ -777,7 +777,6 @@ int main(int argc, char** argv) {
             adg->add_activity(0, TPG::Activity::Type::home);
             adg->add_activity(1, TPG::Activity::Type::home);
             planner.setCollision("table", "left_arm_link_tool", false);
-            planner.setCollision(last_brick_name, "right_arm_link_tool", false);
         }
         if (mode == 1) {
             Object obj = planner.getLegoStart(task_idx);
@@ -848,7 +847,7 @@ int main(int argc, char** argv) {
             Object obj = planner.getLegoTarget(task_idx);
             adg->add_activity(0, TPG::Activity::Type::drop_twist_up, obj);
             if (use_robot2) {
-                adg->add_activity(1, TPG::Activity::Type::support);
+                adg->add_activity(1, TPG::Activity::Type::support_pre, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
             } else {
                 adg->add_activity(1, TPG::Activity::Type::home);
             }
@@ -856,7 +855,8 @@ int main(int argc, char** argv) {
         if (mode == 12) {
             adg->add_activity(0, TPG::Activity::Type::home);
             if (poses[1].use_robot) {
-                adg->add_activity(1, TPG::Activity::Type::home, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
+                planner.setCollision(last_brick_name, "right_arm_link_tool", false);
+                adg->add_activity(1, TPG::Activity::Type::home);
             } else {
                 adg->add_activity(1, TPG::Activity::Type::home);
             }
