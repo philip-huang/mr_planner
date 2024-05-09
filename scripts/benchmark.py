@@ -46,6 +46,7 @@ def eval_setting(ns, robot_name, load_tpg, t, tight, biased, random_shortcut, pl
         'forward_doubleloop': 'true' if loop_type == 'fwd_diter' else 'false',
         'backward_doubleloop': 'true' if loop_type == 'bwd_diter' else 'false',
         'forward_singleloop': 'true' if loop_type == 'iter' else 'false',
+        'biased_sample': 'true' if biased else 'false',
         # Add more parameters as needed
     }
 
@@ -96,7 +97,7 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
     planner_name = 'RRTConnect'
     for env in envs:
         for shortcut_t in shortcut_ts:
-            for tight in [False]:
+            for tight in [True, False]:
                 ns = f'run_{id}'
                 id += 1
                 p = mp.Process(target=eval_setting, 
@@ -135,7 +136,7 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
 
 
 if __name__ == "__main__":
-    envs = ["panda_two", "panda_three", "panda_two_rod", "panda_four", "panda_four_bins"]
+    envs = ["panda_two", "panda_two_rod", "panda_four_bins"]
 
     # processes, id = add_planner_processes(envs)
     # for p in processes:
