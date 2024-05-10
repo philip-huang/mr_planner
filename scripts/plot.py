@@ -92,20 +92,22 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 # Plot the data
 env = 'dual_gp4'
 t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
-#t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+#t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 #t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
-entries = [('b', 'o', 'loose', 'iter', 'Iterative'),
-            #('r', 's', 'loose', 'bwd_diter', 'Backward Double'),
-            ('g', 'x', 'loose', 'random', 'Random'),
-            #('purple', 'D', 'tight', 'random', 'Random + Tight'),
-            ('orange', 'P', 'loose_biased', 'random', 'Random + Biased')]
+entries = [#('b', 'o', 'iter_loose', 'Iterative'),
+            #('r', 's', 'bwd_diter_loose', 'Backward Double'),
+            ('g', 'x', 'random_loose', 'Random'),
+            ('purple', 'D', 'random_tight', 'Random + Tight'),
+            ('orange', 'P', 'random_loose_biased', 'Random + Biased'),
+            ('cyan', 'v', 'random_tight_biased', 'Random + Tight + Biased'),
+        ]
 metric = 'makespan'
 
 plt.figure(figsize=(8, 12))
 plt.title(f'{env}')
 plt.rcParams.update({'font.size': 15})
 
-for color, marker, tight, algo, label in entries:
+for color, marker, algo, label in entries:
     flowtime = []
     makespan = []
     n_check = []
@@ -117,7 +119,7 @@ for color, marker, tight, algo, label in entries:
         # Read the data
         base_dir = '../outputs'
         dir1 = 't=5.0_RRTConnect'
-        dir2 = f't={t}_{algo}_{tight}'
+        dir2 = f't={t}_{algo}'
         df = read_csv(base_dir, dir1, dir2, env)
         
         flowtime.append((df[f'flowtime_diff'].mean(), df['flowtime_diff'].std()))

@@ -67,17 +67,37 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
 
     for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
         int st = 0;
+        double timeDilation = 1;
         for (int j = 0; j < numRobots; j++) {
             RobotPose pose = instance->initRobotPose(j);
             assert (st + pose.joint_values.size() <= plan.trajectory_.joint_trajectory.points[i].positions.size());
             for (int k = 0; k < pose.joint_values.size(); k++) {
                 pose.joint_values[k] = plan.trajectory_.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
             }
+
+            if (i > 0) {
+                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
+                double speed = std::abs(instance->computeDistance(solution[j].trajectory.back(), pose)) / dt;
+                if (speed > instance->getVMax(j)) {
+                    timeDilation = std::max(timeDilation, speed / instance->getVMax(j));
+                }
+            }
             solution[j].trajectory.push_back(pose);
-            solution[j].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
             st += pose.joint_values.size();
         }
+
+        for (int j = 0; j < numRobots; j++) {
+            if (i > 0) {
+                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
+                dt = dt * timeDilation;
+                solution[j].times.push_back(solution[j].times.back() + dt);
+            }
+            else {
+                solution[j].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
+            }
+        }
     }
+
 
     for (int i = 0; i < numRobots; i++) {
         solution[i].cost = solution[i].times.back();

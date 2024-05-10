@@ -92,20 +92,20 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
 
     load_tpg = True
     random_shortcut = True
-    biased = True
     planning_time = 5.0
     planner_name = 'RRTConnect'
     for env in envs:
         for shortcut_t in shortcut_ts:
-            for tight in [True, False]:
-                ns = f'run_{id}'
-                id += 1
-                p = mp.Process(target=eval_setting, 
-                                args=(ns, env, load_tpg, shortcut_t, tight, biased, random_shortcut, 
-                                      planner_name, planning_time, 'iter'))
-                p.start()
-                processes.append(p)
-                time.sleep(1)
+            for tight in [True]:
+                for biased in [False, True]:
+                    ns = f'run_{id}'
+                    id += 1
+                    p = mp.Process(target=eval_setting, 
+                                    args=(ns, env, load_tpg, shortcut_t, tight, biased, random_shortcut, 
+                                        planner_name, planning_time, 'iter'))
+                    p.start()
+                    processes.append(p)
+                    time.sleep(1)
     return processes, id
 
 def add_baseline_processes(envs, shortcut_ts, id = 0):
@@ -136,13 +136,13 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
 
 
 if __name__ == "__main__":
-    envs = ["panda_two", "panda_two_rod", "panda_four_bins"]
+    envs = ["dual_gp4"]
 
     # processes, id = add_planner_processes(envs)
     # for p in processes:
     #     p.join()
 
-    shortcut_ts = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+    shortcut_ts = [0.2, 0.5, 1.0, 2.0]
     processes, id = add_tpg_processes(envs, shortcut_ts)
     for p in processes:
        p.join()

@@ -22,6 +22,9 @@ void ShortcutSampler::init(const std::vector<std::shared_ptr<Node>> &start_nodes
     numNodes_ = numNodes;
 
     failed_shortcuts_.clear();
+    failed_shortcuts_static_.clear();
+    untight_shortcuts_.clear();
+    already_shortcuts_.clear();
 }
 
 bool ShortcutSampler::sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
@@ -54,12 +57,34 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
         return false;
     }
 
+    for (int k = 0; k < already_shortcuts_.size(); k++) {
+        if (already_shortcuts_[k].first->robotId == i) {
+            int s = already_shortcuts_[k].first->timeStep;
+            int e = already_shortcuts_[k].second->timeStep;
+            if (startNode >= s && endNode <= e) {
+                return false;
+            }
+        }
+    }
+    for (int k = 0; k < untight_shortcuts_.size(); k++) {
+        if (untight_shortcuts_[k].first->robotId == i) {
+            int s = untight_shortcuts_[k].first->timeStep;
+            int e = untight_shortcuts_[k].second->timeStep;
+            if (startNode >= s && endNode <= e) {
+                return false;
+            }
+        }
+    }
+    
+
     double prob = 1.0;
+
     for (int k = 0; k < failed_shortcuts_.size(); k++) {
         if (failed_shortcuts_[k].first->robotId == i) {
             int s = failed_shortcuts_[k].first->timeStep;
             int e = failed_shortcuts_[k].second->timeStep;
-            double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            //double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
             prob = prob * prob_k;
         }
     }
@@ -67,15 +92,17 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
         if (failed_shortcuts_static_[k].first->robotId == i) {
             int s = failed_shortcuts_static_[k].first->timeStep;
             int e = failed_shortcuts_static_[k].second->timeStep;
-            double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
             prob = prob * prob_k;
         }
     }
     
     // drop the sample based on the probability
     int s = std::rand() % 1000;
+    prob = prob * 1000;
+    log("Sample prob: " + std::to_string(prob) + " random: " + std::to_string(s), LogLevel::DEBUG);
 
-    if (std::rand() % 1000 >= prob * 1000) {
+    if (s >= prob) {
         return false;
     }
     ni = nodes_[i][startNode];
@@ -84,12 +111,18 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
 }
 
 
-void ShortcutSampler::updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, bool static_collision) {
-    if (static_collision) {
+void ShortcutSampler::updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, CollisionType col_type) {
+    if (col_type == CollisionType::STATIC) {
         failed_shortcuts_static_.push_back(std::make_pair(ni, nj));
     }
-    else {
+    else if (col_type == CollisionType::NO_NEED) {
+        already_shortcuts_.push_back(std::make_pair(ni, nj));
+    }
+    else if (col_type == CollisionType::ROBOT) {
         failed_shortcuts_.push_back(std::make_pair(ni, nj));
+    }
+    else if (col_type == CollisionType::UNTIGHT) {
+        untight_shortcuts_.push_back(std::make_pair(ni, nj));
     }
 }
 
@@ -443,9 +476,8 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
         }
 
         int robot_id = node_i->robotId;
-        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
-        CollisionType res = CollisionType::NO_NEED;
-        if (pre_check) {
+        CollisionType res = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
+        if (res == CollisionType::NONE) {
             std::vector<Eigen::MatrixXi> col_matrix;
             std::vector<RobotPose> shortcut_path;
 
@@ -524,13 +556,13 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         assert (node_i != nullptr && node_j != nullptr);
 
         int robot_id = node_i->robotId;
-        bool pre_check = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
-        if (pre_check) {
+        CollisionType res = preCheckShortcuts(instance, node_i, node_j, earliest_t[robot_id], latest_t[robot_id]);
+        if (res == CollisionType::NONE) {
             std::vector<Eigen::MatrixXi> col_matrix;
             std::vector<RobotPose> shortcut_path;
 
             auto tic_inner = std::chrono::high_resolution_clock::now();
-            CollisionType res = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
+            res = checkShortcuts(instance, node_i, node_j, shortcut_path, col_matrix);
             auto inner = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tic_inner).count();
             t_shortcut_check_ += (inner * 1e-6);
             num_shortcut_checks_++;
@@ -559,12 +591,9 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
                 }
                 num_valid_shortcuts_++;
             }
-            else if (res == CollisionType::ROBOT) {
-                sampler.updateFailedShortcut(node_i, node_j, false);
-            }
-            else if (res == CollisionType::STATIC) {
-                sampler.updateFailedShortcut(node_i, node_j, true);
-            }
+        }
+        if (res != CollisionType::NONE) {
+            sampler.updateFailedShortcut(node_i, node_j, res);
         }
 
         auto toc = std::chrono::high_resolution_clock::now();
@@ -574,7 +603,7 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
     assert(hasCycle() == false);
 }
 
-bool TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
+CollisionType TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
         const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const {    
     // check if there is a shortcut between ni and nj
     assert(ni->robotId == nj->robotId && ni->timeStep < nj->timeStep - 1);
@@ -584,36 +613,36 @@ bool TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_
     int shortcutSteps = timeNeeded / dt_ + 1;
 
     if (shortcutSteps > (nj->timeStep - ni->timeStep)) {
-        return false; // no need for shortcut
+        return CollisionType::NO_NEED; // no need for shortcut
     }
 
-    if (config_.helpful_shortcut) {
-        bool helpful = false;
-        std::shared_ptr <Node> current = ni->Type1Next;
-        while (!helpful && current != nj) {
-            if (current->Type2Next.size() > 0) {
-                helpful = true;
-            }
-            current = current->Type1Next;
-        }
-        current = nj;
-        while (!helpful && current != nullptr) {
-            if (current->Type2Prev.size() > 0) {
-                for (auto edge : current->Type2Prev) {
-                    if (edge.nodeFrom->timeStep >= current->timeStep) {
-                        break;
-                    }
-                }
-            }
-            if (current->Type2Next.size() > 0) {
-                helpful = true;
-            }
-            current = current->Type1Next;
-        }
-        if (!helpful && (current != nullptr)) {
-            return false;
-        }
-    }
+    // if (config_.helpful_shortcut) {
+    //     bool helpful = false;
+    //     std::shared_ptr <Node> current = ni->Type1Next;
+    //     while (!helpful && current != nj) {
+    //         if (current->Type2Next.size() > 0) {
+    //             helpful = true;
+    //         }
+    //         current = current->Type1Next;
+    //     }
+    //     current = nj;
+    //     while (!helpful && current != nullptr) {
+    //         if (current->Type2Prev.size() > 0) {
+    //             for (auto edge : current->Type2Prev) {
+    //                 if (edge.nodeFrom->timeStep >= current->timeStep) {
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //         if (current->Type2Next.size() > 0) {
+    //             helpful = true;
+    //         }
+    //         current = current->Type1Next;
+    //     }
+    //     if (!helpful && (current != nullptr)) {
+    //         return false;
+    //     }
+    // }
 
     if (config_.tight_shortcut) {
         std::shared_ptr<Node> current = ni;
@@ -634,14 +663,14 @@ bool TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_
         }
         
         if (!has_tight_type2_edge && !all_tight_type1_edge) {
-            return false;
+            return CollisionType::UNTIGHT;
         }
     }
 
-    return true;
+    return CollisionType::NONE;
 }
 
-TPG::CollisionType TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
+CollisionType TPG::checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
     std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const {
     // check if there is a shortcut between ni and nj
     assert(ni->robotId == nj->robotId && ni->timeStep < nj->timeStep - 1);

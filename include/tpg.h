@@ -101,13 +101,21 @@ namespace TPG {
         std::shared_ptr<Node> nodeTo;   ///< Pointer to the Node to which this edge leads
     };
 
+    enum class CollisionType {
+        NONE = 0,
+        STATIC = 1,
+        ROBOT = 2,
+        NO_NEED = 3,
+        UNTIGHT = 4,
+    };
+
     class ShortcutSampler {
     public:
         ShortcutSampler(const TPGConfig &config);
         void init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes);
 
         bool sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
-        void updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, bool static_collision);
+        void updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, CollisionType col_type);
     
     private:
         bool sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
@@ -119,8 +127,10 @@ namespace TPG {
         std::vector<int> numNodes_;
         std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_;
         std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_static_;
+        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> already_shortcuts_;
+        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> untight_shortcuts_;
         std::vector<std::vector<double>> sample_prob_;
-        double scale_ = 25.0;
+        double scale_ = 5.0;
     };
 
     class TPG {
@@ -150,13 +160,6 @@ namespace TPG {
         ar & collisionCheckMatrix_;
     }
     public:
-        enum class CollisionType {
-            NONE = 0,
-            STATIC = 1,
-            ROBOT = 2,
-            NO_NEED = 3,
-        };
-
         TPG() = default;
         // copy constructor
         TPG(const TPG &tpg);
@@ -208,7 +211,7 @@ namespace TPG {
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         void findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t);
         void findFlowtimeMakespan(double &flowtime, double &makespan);
-        bool preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
+        CollisionType preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
             const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const;
         CollisionType checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
             std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
