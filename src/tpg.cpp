@@ -39,10 +39,14 @@ bool ShortcutSampler::sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &n
 bool ShortcutSampler::sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
     int i = std::rand() % num_robots_;
     int startNode = std::rand() % numNodes_[i];
-    int endNode = std::rand() % numNodes_[i];
-    if (endNode <= 1 || startNode >= endNode - 1) {
+    if (startNode >= numNodes_[i] - 2) {
         return false;
     }
+    int length = std::rand() % (numNodes_[i] - startNode - 2) + 2;
+    int endNode = startNode + length;
+    // if (endNode <= 1 || startNode >= endNode - 1) {
+    //     return false;
+    // }
 
     ni = nodes_[i][startNode];
     nj = nodes_[i][endNode];
@@ -52,10 +56,15 @@ bool ShortcutSampler::sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<N
 bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj) {
     int i = std::rand() % num_robots_;
     int startNode = std::rand() % numNodes_[i];
-    int endNode = std::rand() % numNodes_[i];
-    if (endNode <= 1 || startNode >= endNode - 1) {
+    if (startNode >= numNodes_[i] - 2) {
         return false;
     }
+    int length = std::rand() % (numNodes_[i] - startNode - 2) + 2;
+    int endNode = startNode + length;
+    // if (endNode <= 1 || startNode >= endNode - 1) {
+    //     return false;
+    // }
+
 
     for (int k = 0; k < already_shortcuts_.size(); k++) {
         if (already_shortcuts_[k].first->robotId == i) {
@@ -83,8 +92,8 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
         if (failed_shortcuts_[k].first->robotId == i) {
             int s = failed_shortcuts_[k].first->timeStep;
             int e = failed_shortcuts_[k].second->timeStep;
-            //double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
-            double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
+            double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            //double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
             prob = prob * prob_k;
         }
     }
@@ -92,7 +101,8 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
         if (failed_shortcuts_static_[k].first->robotId == i) {
             int s = failed_shortcuts_static_[k].first->timeStep;
             int e = failed_shortcuts_static_[k].second->timeStep;
-            double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
+            double prob_k = std::min(1.0, (std::pow(s - startNode, 2) + std::pow(e - endNode, 2))/ (scale_ * scale_));
+            //double prob_k = std::min(1.0, (std::max(0, startNode -s) + std::max(0, e - endNode)) / scale_);
             prob = prob * prob_k;
         }
     }
@@ -111,18 +121,20 @@ bool ShortcutSampler::sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<No
 }
 
 
-void ShortcutSampler::updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, CollisionType col_type) {
-    if (col_type == CollisionType::STATIC) {
-        failed_shortcuts_static_.push_back(std::make_pair(ni, nj));
-    }
-    else if (col_type == CollisionType::NO_NEED) {
-        already_shortcuts_.push_back(std::make_pair(ni, nj));
-    }
-    else if (col_type == CollisionType::ROBOT) {
-        failed_shortcuts_.push_back(std::make_pair(ni, nj));
-    }
-    else if (col_type == CollisionType::UNTIGHT) {
-        untight_shortcuts_.push_back(std::make_pair(ni, nj));
+void ShortcutSampler::updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, CollisionType col_type) {\
+    if (!biased_) {
+        if (col_type == CollisionType::STATIC) {
+            failed_shortcuts_static_.push_back(std::make_pair(ni, nj));
+        }
+        else if (col_type == CollisionType::NO_NEED) {
+            already_shortcuts_.push_back(std::make_pair(ni, nj));
+        }
+        else if (col_type == CollisionType::ROBOT) {
+            failed_shortcuts_.push_back(std::make_pair(ni, nj));
+        }
+        else if (col_type == CollisionType::UNTIGHT) {
+            untight_shortcuts_.push_back(std::make_pair(ni, nj));
+        }
     }
 }
 

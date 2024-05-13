@@ -130,7 +130,7 @@ namespace TPG {
         std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> already_shortcuts_;
         std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> untight_shortcuts_;
         std::vector<std::vector<double>> sample_prob_;
-        double scale_ = 5.0;
+        double scale_ = 15.0;
     };
 
     class TPG {
