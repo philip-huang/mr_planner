@@ -656,6 +656,12 @@ CollisionType TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std
                     break;
                 }
             }
+            for (auto edge : current->Type2Next) {
+                if (edge.tight) {
+                    has_tight_type2_edge = true;
+                    break;
+                }
+            }
             current = current->Type1Next;
             if (earliest_t[current->timeStep] < latest_t[current->timeStep]) {
                 all_tight_type1_edge = false;

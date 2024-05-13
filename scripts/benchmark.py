@@ -97,7 +97,7 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
     for env in envs:
         for shortcut_t in shortcut_ts:
             for tight in [True]:
-                for biased in [False, True]:
+                for biased in [True, False]:
                     ns = f'run_{id}'
                     id += 1
                     p = mp.Process(target=eval_setting, 
