@@ -102,11 +102,35 @@ namespace TPG {
     };
 
     enum class CollisionType {
+        UNKNOWN = -1,
         NONE = 0,
         STATIC = 1,
         ROBOT = 2,
         NO_NEED = 3,
         UNTIGHT = 4,
+    };
+    
+    struct Shortcut {
+        std::weak_ptr<Node> ni;
+        std::weak_ptr<Node> nj;
+        std::vector<RobotPose> path;
+        std::weak_ptr<Node> n_robot_col;
+        CollisionType col_type = CollisionType::UNKNOWN;
+
+        Shortcut() = default;
+        Shortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj) {
+            this->ni = ni;
+            this->nj = nj;
+        }
+
+        bool expired() const {
+            return ni.expired() || nj.expired();
+        };
+        
+        int robot_id() const {
+            return (!expired()) ? ni.lock()->robotId : -1;
+        };
+
     };
 
     class ShortcutSampler {
@@ -114,21 +138,21 @@ namespace TPG {
         ShortcutSampler(const TPGConfig &config);
         void init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes);
 
-        bool sample(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
-        void updateFailedShortcut(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, CollisionType col_type);
+        bool sample(Shortcut &shortcut);
+        void updateFailedShortcut(const Shortcut &shortcut);
     
     private:
-        bool sampleUniform(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
-        bool sampleBiased(std::shared_ptr<Node> &ni, std::shared_ptr<Node> &nj);
+        bool sampleUniform(Shortcut &shortcut);
+        bool sampleBiased(Shortcut &shortcut);
 
         bool biased_ = false;
         int num_robots_ = 0;
         std::vector<std::vector<std::shared_ptr<Node>>> nodes_;
         std::vector<int> numNodes_;
-        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_;
-        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> failed_shortcuts_static_;
-        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> already_shortcuts_;
-        std::vector<std::pair<std::shared_ptr<Node>, std::shared_ptr<Node>>> untight_shortcuts_;
+        std::vector<Shortcut> failed_shortcuts_;
+        std::vector<Shortcut> failed_shortcuts_static_;
+        std::vector<Shortcut> already_shortcuts_;
+        std::vector<Shortcut> untight_shortcuts_;
         std::vector<std::vector<double>> sample_prob_;
         double scale_ = 15.0;
     };
@@ -211,13 +235,11 @@ namespace TPG {
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         void findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t);
         void findFlowtimeMakespan(double &flowtime, double &makespan);
-        CollisionType preCheckShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj,
+        void preCheckShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut,
             const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const;
-        CollisionType checkShortcuts(std::shared_ptr<PlanInstance> instance, std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
-            std::vector<RobotPose> &shortcut_path, std::vector<Eigen::MatrixXi> &col_matrix) const;
+        void checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void switchShortcuts();
-        void updateTPG(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, 
-            const std::vector<RobotPose> &shortcut_path, const std::vector<Eigen::MatrixXi> &col_matrix);
+        void updateTPG(const Shortcut &shortcut, const std::vector<Eigen::MatrixXi> &col_matrix);
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
         bool bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const;
         bool hasCycle() const;

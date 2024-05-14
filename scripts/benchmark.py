@@ -96,8 +96,8 @@ def add_tpg_processes(envs, shortcut_ts, id = 0):
     planner_name = 'RRTConnect'
     for env in envs:
         for shortcut_t in shortcut_ts:
-            for tight in [True]:
-                for biased in [True, False]:
+            for tight in [True, False]:
+                for biased in [True]:
                     ns = f'run_{id}'
                     id += 1
                     p = mp.Process(target=eval_setting, 
@@ -143,6 +143,7 @@ if __name__ == "__main__":
     #     p.join()
 
     shortcut_ts = [0.2, 0.5, 1.0, 2.0]
+    #shortcut_ts = [0.01, 0.02, 0.05, 0.1]
     processes, id = add_tpg_processes(envs, shortcut_ts)
     for p in processes:
        p.join()

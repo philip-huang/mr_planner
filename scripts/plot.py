@@ -92,13 +92,13 @@ def read_motionplan_csv(base_dir, dir1, dir2, env):
 # Plot the data
 env = 'dual_gp4'
 t_values = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
-#t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
+#t_values = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 #t_values = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 entries = [#('b', 'o', 'iter_loose', 'Iterative'),
             #('r', 's', 'bwd_diter_loose', 'Backward Double'),
-            ('g', 'x', 'random_loose', 'Random'),
+            #('g', 'x', 'random_loose', 'Random'),
             ('purple', 'D', 'random_tight', 'Random + Tight'),
-            ('orange', 'P', 'random_loose_biased', 'Random + Biased'),
+            #('orange', 'P', 'random_loose_biased', 'Random + Biased'),
             ('cyan', 'v', 'random_tight_biased', 'Random + Tight + Biased'),
         ]
 metric = 'makespan'
