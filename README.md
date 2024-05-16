@@ -14,7 +14,7 @@ Or if you are not using the docker file, make sure to download moveit, the [lego
 
 Lunch the docker or a terminal, then run
 ```
-roslaunch mr_planner planner.launch
+roslaunch mr_planner lego.launch
 ```
 to launch the lego planner
 

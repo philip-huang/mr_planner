@@ -98,18 +98,18 @@ target_include_directories(lego PUBLIC
 # /* -------------------------------------------------------------------------- */
 # /*                             Testing Executables                            */
 # /* -------------------------------------------------------------------------- */
-add_executable(mr_planner_node
-  src/plan_node.cpp
+add_executable(lego_node
+  src/lego_node.cpp
 )
 
 
-target_link_libraries(mr_planner_node
+target_link_libraries(lego_node
   ${PROJECT_NAME}
   lego
   ${catkin_LIBRARIES}
 )
 
-install(TARGETS mr_planner_node
+install(TARGETS lego_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
