@@ -3,143 +3,71 @@
 
 namespace TPG {
 
-const std::map<Activity::Type, std::string> Activity::enumStringMap = {
-    {Activity::Type::home, "home"},
-    {Activity::Type::pick_tilt_up, "pick_tilt_up"},
-    {Activity::Type::pick_up, "pick_up"},
-    {Activity::Type::pick_down, "pick_down"},
-    {Activity::Type::pick_twist, "pick_twist"},
-    {Activity::Type::pick_twist_up, "pick_twist_up"},
-    {Activity::Type::drop_tilt_up, "drop_tilt_up"},
-    {Activity::Type::drop_up, "drop_up"},
-    {Activity::Type::drop_down, "drop_down"},
-    {Activity::Type::drop_twist, "drop_twist"},
-    {Activity::Type::drop_twist_up, "drop_twist_up"},
-    {Activity::Type::support, "support"},
-    {Activity::Type::support_pre, "support_pre"},
-};
-
-ADG::ADG(int num_robots) {
-    num_robots_ = num_robots;
-    activities_.resize(num_robots);
-
-}
-
-void ADG::add_activity(int robot_id, Activity::Type type) {
-    std::shared_ptr<Activity> activity = std::make_shared<Activity>(robot_id, type);
-    activity->activity_id = activities_[robot_id].size();
-    
-    activities_[robot_id].push_back(activity);
-}
-
-void ADG::add_activity(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep) {
-    assert(type2_dep != nullptr);
-    std::shared_ptr<Activity> activity = std::make_shared<Activity>(robot_id, type);
-    activity->activity_id = activities_[robot_id].size();
-    activity->add_type2_dep(type2_dep);
-    type2_dep->add_type2_next(activity);
-
-    activities_[robot_id].push_back(activity);
-}
-
-void ADG::add_activity(int robot_id, Activity::Type type, const Object &obj) {
-    std::shared_ptr<Activity> activity = std::make_shared<Activity>(robot_id, type);
-    activity->activity_id = activities_[robot_id].size();
-    auto obj_node = std::make_shared<ObjectNode>(obj, obj_nodes_.size());
-
-    if (type <= Activity::Type::pick_twist_up) {
-        activity->obj_picked.push_back(obj_node);
-        obj_node->next_pick = activity;
-    }
-    else {
-        activity->obj_placed.push_back(obj_node);
-        obj_node->prev_place = activity;
-    }
-    
-    obj_nodes_.push_back(obj_node);
-    activities_[robot_id].push_back(activity);
-
-}
-
-std::shared_ptr<Activity> ADG::get_activity(int robot_id, int activity_id) {
-    if (activity_id >= activities_[robot_id].size()) {
-        return nullptr;
-    }
-    return activities_[robot_id][activity_id];
-}
-
-std::shared_ptr<Activity> ADG::get_last_activity(int robot_id, Activity::Type type) {
-    for (int i = activities_[robot_id].size() - 1; i >= 0; i--) {
-        if (activities_[robot_id][i]->type == type) {
-            return activities_[robot_id][i];
-        }
-    }
-    return nullptr;
-}
-
-void ADG::add_trajectory(int robot_id, int activity_id, const RobotTrajectory &trajectory) {
-    //activities_[robot_id][activity_id]->trajectory = trajectory;
-}
-
-bool ADG::init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, const std::vector<std::shared_ptr<TPG>> &tpgs) {
+bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, const std::vector<std::shared_ptr<TPG>> &tpgs) {
     dt_ = config.dt;
     config_ = config;
+    num_robots_ = act_graph_.num_robots();
 
     start_nodes_.resize(num_robots_);
     end_nodes_.resize(num_robots_);
+    intermediate_nodes_.resize(num_robots_);
     numNodes_.resize(num_robots_, 0);
     solution_.resize(num_robots_);
     for (int i = 0; i < num_robots_; i++) {
-        for (int activity_id = 0; activity_id < activities_[i].size(); activity_id++) {
-            auto act = get_activity(i, activity_id);
-            act->start_node = tpgs[activity_id]->getStartNode(i);
-            act->end_node = tpgs[activity_id]->getEndNode(i);
-            assert(act->start_node != nullptr && act->end_node != nullptr);
+        std::vector<std::shared_ptr<Node>> inter_nodes;
+        for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
+            auto act = act_graph_.get(i, act_id);
+            auto inter_start_node = tpgs[act_id]->getStartNode(i);
+            auto inter_end_node = tpgs[act_id]->getEndNode(i);
 
-            std::shared_ptr<Node> iter_node = act->start_node;
-            while (iter_node != act->end_node) {
+            std::shared_ptr<Node> iter_node = inter_start_node;
+            while (iter_node != inter_end_node) {
                 iter_node->timeStep += numNodes_[i];
                 iter_node = iter_node->Type1Next;
             }
-            act->end_node->timeStep += numNodes_[i];
+            inter_end_node->timeStep += numNodes_[i];
 
-            if (activity_id == 0) {
-                start_nodes_[i] = act->start_node;
-                end_nodes_[i] = act->end_node;
+            if (act_id > 0) {
+                inter_nodes.back()->Type1Next = inter_start_node;
+                inter_start_node->Type1Prev = inter_nodes.back();
             }
-            else {
-                end_nodes_[i]->Type1Next = act->start_node;
-                act->start_node->Type1Prev = end_nodes_[i];
-                end_nodes_[i] = act->end_node;
-                auto prev_act = get_activity(i, activity_id - 1);
-                prev_act->type1_next = act;
-                act->type1_prev = prev_act;
-            }
-            numNodes_[i] += tpgs[activity_id]->getNumNodes(i);
+
+            inter_nodes.push_back(inter_start_node);
+            inter_nodes.push_back(inter_end_node);
+            numNodes_[i] += tpgs[act_id]->getNumNodes(i);
         }
-    } 
+        intermediate_nodes_[i] = inter_nodes;
+        start_nodes_[i] = inter_nodes.front();
+        end_nodes_[i] = inter_nodes.back();
+    }
 
     // add task dependencies type 2 edges
     idType2Edges_ = 10000;
     for (int i = 0; i < num_robots_; i++) {
-        for (int activity_id = 0; activity_id < activities_[i].size(); activity_id++) {
-            auto act = get_activity(i, activity_id);
+        for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
+            auto act = act_graph_.get(i, act_id);
             for (auto dep : act->type2_prev) {
                 type2Edge edge;
                 edge.edgeId = idType2Edges_++;
-                assert(dep->end_node != nullptr);
-                if (dep->end_node->Type1Next == nullptr) {
+                auto dep_end_node = intermediate_nodes_[dep->robot_id][dep->act_id * 2 + 1];
+                auto cur_start_node = intermediate_nodes_[i][act_id * 2];
+                assert(dep_end_node != nullptr);
+                if (dep_end_node->Type1Next == nullptr) {
                     log("activity depend on another terminal activity, this is deadlock!", LogLevel::ERROR);
                     return false;
                 }
-                edge.nodeFrom = dep->end_node->Type1Next;
-                edge.nodeTo = act->start_node;
-                dep->end_node->Type1Next->Type2Next.push_back(edge);
-                act->start_node->Type2Prev.push_back(edge);
+                edge.nodeFrom = dep_end_node->Type1Next;
+                edge.nodeTo = cur_start_node;
+                dep_end_node->Type1Next->Type2Next.push_back(edge);
+                cur_start_node->Type2Prev.push_back(edge);
             }
         }
     }
-
+    
+    // recompute the time step for each node
+    std::vector<std::vector<int>> reached_t;
+    std::vector<int> reached_end;
+    findEarliestReachTime(reached_t, reached_end);
     // add collision dependencies type 2 edges
 
     // for each pair of activities between each pair of robot
@@ -147,48 +75,96 @@ bool ADG::init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, 
     // update the planning scene (add objects, attach objects, or detach objects)
     // run collision check for each pair of nodes between the two activities
     // add type 2 edge if there is collision
-    // idType2Edges_ = 20000;
+    idType2Edges_ = 20000;
+ 
+    for (int i = 0; i < num_robots_; i++) {
+        for (int j = i + 1; j < num_robots_; j++) {
+            for (int act_id_i = 0; act_id_i < act_graph_.num_activities(i); act_id_i++) {
+                auto act_i = act_graph_.get(i, act_id_i);
+                
+                // updated attached / detached object
+                for (auto obj : act_i->obj_attached) {
+                    instance->moveObject(obj->obj);
+                    instance->updateScene();
+                    instance->attachObjectToRobot(obj->obj.name, i, obj->next_attach_link, act_i->start_pose);
+                    instance->updateScene();
+                }
+                for (auto obj : act_i->obj_detached) {
+                    instance->detachObjectFromRobot(obj->obj.name, act_i->start_pose);
+                    instance->updateScene();
+                }
 
-    // for (int i = 0; i < num_robots_; i++) {
-    //     for (int j = i + 1; j < num_robots_; j++) {
-    //         for (int activity_id_i = 0; activity_id_i < activities_[i].size(); activity_id_i++) {
-    //             for (int activity_id_j = 0; activity_id_j < activities_[j].size(); activity_id_j++) {
-    //                 if (activity_id_i == activity_id_j) {
-    //                     continue;
-    //                 }
-    //                 auto act_i = get_activity(i, activity_id_i);
-    //                 auto act_j = get_activity(j, activity_id_j);
+                // run bfs on the task graph
+                std::vector<std::vector<bool>> visited;
+                for (int k = 0; k < num_robots_; k++) {
+                    visited.push_back(std::vector<bool>(act_graph_.num_activities(i), false));
+                }
+                act_graph_.bfs(act_i, visited, true);
+                act_graph_.bfs(act_i, visited, false);
+
+                for (int act_id_j = 0; act_id_j < act_graph_.num_activities(j); act_id_j++) {
+                    // updated attached / detached object
+                    auto act_j = act_graph_.get(j, act_id_j);
+                    for (auto obj : act_j->obj_attached) {
+                        instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
+                        instance->updateScene();
+                    }
+                    for (auto obj : act_j->obj_detached) {
+                        instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
+                        instance->updateScene();
+                    }
+
+                    if (act_id_i == act_id_j) {
+                        // skip if they are in the same tpg because type-2 dependencies would have already been build
+                        continue;
+                    }
+                    if (visited[j][act_id_j]) {
+                        // skip if the two activities are dependent
+                        continue;
+                    }
                     
+                    auto act_i_start_node = intermediate_nodes_[i][act_id_i * 2];
+                    auto act_i_end_node = intermediate_nodes_[i][act_id_i * 2 + 1];
+                    auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
+                    auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
                     
-    //                 if (act_i->end_node->timeStep >= act_j->start_node->timeStep) {
-    //                     // check collision
-    //                     std::shared_ptr<Node> iter_node_i = act_i->start_node;
-    //                     while (iter_node_i != act_j->end_node) {
-    //                         std::shared_ptr<Node> iter_node_j = act_j->start_node;
-    //                         bool inCollision = false;
-    //                         while (iter_node_j != act_j->end_node && iter_node_j->timeStep <= iter_node_i->timeStep) {
-    //                             bool has_collision = instance->checkCollision({iter_node_i->pose, iter_node_j->pose}, true);
-    //                             if (has_collision) {
-    //                                 inCollision = true;
-    //                             }
-    //                             else {
-    //                                 inCollision = false;
-    //                                 type2Edge edge;
-    //                                 edge.edgeId = idType2Edges_++;
-    //                                 edge.nodeFrom = iter_node_j;
-    //                                 edge.nodeTo = iter_node_i;
-    //                                 iter_node_j->Type2Next.push_back(edge);
-    //                                 iter_node_i->Type2Prev.push_back(edge);
-    //                             }
-    //                             iter_node_j = iter_node_j->Type1Next;
-    //                         }
-    //                         iter_node_i = iter_node_i->Type1Next;
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+                    if (reached_t[j][act_j_start_node->timeStep] <= reached_t[i][act_i_end_node->timeStep]) {
+                        // check collision
+                        std::shared_ptr<Node> iter_node_i = act_i_start_node;
+                        std::shared_ptr<Node> iter_node_j_start = act_j_start_node;
+                        while (iter_node_i != nullptr && iter_node_i->timeStep <= act_i_end_node->timeStep) {
+                            std::shared_ptr<Node> iter_node_j = iter_node_j_start;
+                            bool inCollision = false;
+                            while (iter_node_j != nullptr &&
+                                iter_node_j->timeStep <= act_j_end_node->timeStep &&
+                                reached_t[j][iter_node_j->timeStep] <= reached_t[i][iter_node_i->timeStep]) 
+                            {
+                                bool has_collision = instance->checkCollision({iter_node_i->pose, iter_node_j->pose}, true);
+                                if (has_collision) {
+                                    inCollision = true;
+                                }
+                                else if (inCollision) {
+                                    inCollision = false;
+                                    type2Edge edge;
+                                    edge.edgeId = idType2Edges_++;
+                                    edge.nodeFrom = iter_node_j;
+                                    edge.nodeTo = iter_node_i;
+                                    iter_node_j->Type2Next.push_back(edge);
+                                    iter_node_i->Type2Prev.push_back(edge);
+                                    iter_node_j_start = iter_node_j->Type1Next;
+
+                                    // std::cout << "add type 2 edge from robot " << j << " timestep " << iter_node_j->timeStep
+                                    //     << " to robot " << i << " timestep " << iter_node_i->timeStep << std::endl;
+                                }
+                                iter_node_j = iter_node_j->Type1Next;
+                            }
+                            iter_node_i = iter_node_i->Type1Next;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     transitiveReduction();
     if (hasCycle()) {
@@ -200,66 +176,61 @@ bool ADG::init(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, 
     return true;
 }
 
-
-bool ADG::saveADGToDotFile(const std::string &filename) {
-    std::ofstream out(filename);
-    out << "digraph G {" << std::endl;
-
-    // define node attributes here
-    out << "node [shape=ellipse];" << std::endl;
-    out << "rankdir=LR;" << std::endl;
-
-    // define all the nodes
-    for (int i = 0; i < num_robots_; i++) {
-        out << "subgraph cluster_" << i << " {" << std::endl;
-        out << "label = \"Robot " << i << "\";" << std::endl;
-        out << "rank=same;" << std::endl;
-        for (int j = 0; j < activities_[i].size(); j++) {
-            std::shared_ptr<Activity> act = get_activity(i, j);
-            out << "a" << i << "_" << act->activity_id << " [label=\"" << act->type_string() << "\"];" << std::endl;
-        }
-        // activity type-1 edges
-        std::shared_ptr<Activity> act = get_activity(i, 0);
-        out << "a" << i << "_" << act->activity_id;
-        for (int j = 1; j < activities_[i].size(); j++) {
-            std::shared_ptr<Activity> act = get_activity(i, j);
-            out << " -> " << "a" << i << "_" << act->activity_id;
-        }
-
-        out << ";" << std::endl;
-        out << "}" << std::endl;
-    }
-
-    // define type2 edges
-    for (int i = 0; i < num_robots_; i++) {
-        for (int activity_id = 0; activity_id < activities_[i].size(); activity_id++) {
-            auto act = get_activity(i, activity_id);
-            for (auto dep : act->type2_prev) {
-                out << "a" << dep->robot_id << "_" << dep->activity_id << " -> " << "a" << act->robot_id << "_" << act->activity_id << ";" << std::endl;
-            }
-        }
-    }
-
-    // define object nodes
-    for (int i = 0; i < obj_nodes_.size(); i++) {
-        out << "o" << i << " [label=\"" << obj_nodes_[i]->obj.name << "\"];" << std::endl;
-        if (obj_nodes_[i]->prev_place != nullptr) {
-            out << "a" << obj_nodes_[i]->prev_place->robot_id << "_" << obj_nodes_[i]->prev_place->activity_id << " -> o" << i << ";" << std::endl;
-        }
-        if (obj_nodes_[i]->next_pick != nullptr) {
-            out << "o" << i << " -> a" << obj_nodes_[i]->next_pick->robot_id << "_" << obj_nodes_[i]->next_pick->activity_id << ";" << std::endl;
-        }
-    }
+void ADG::update_joint_states(const std::vector<double> &joint_states, int robot_id)
+{
+    TPG::update_joint_states(joint_states, robot_id);
     
+    if (num_robots_ > executed_acts_.size()) {
+        return;
+    }
+    // check if the activity is completed
+    for (int robot_id = 0; robot_id < num_robots_; robot_id++) {
+        int act_id = executed_acts_[robot_id]->load();
+        if (act_id >= act_graph_.num_activities(robot_id)) {
+            continue;
+        }
+        auto act = act_graph_.get(robot_id, act_id);
+        // compare the joint values
+        double error = 0;
+        for (int i = 0; i < joint_states_[robot_id].size(); i++) {
+            error += std::abs(joint_states_[robot_id][i] - act->end_pose.joint_values[i]);
+        }
+        if (error < 0.1) {
+            executed_acts_[robot_id]->fetch_add(1);
+            log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::DEBUG);
 
-    out << "}" << std::endl;
-    out.close();
+            // update any attached object
+            if (instance_) {
+                for (auto obj : act->obj_attached) {
+                    instance_->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act->start_pose);
+                    instance_->updateScene();
+                }
+                for (auto obj : act->obj_detached) {
+                    instance_->detachObjectFromRobot(obj->obj.name, act->start_pose);
+                    instance_->updateScene();
+                }
+            }
+            
+        }
+    }
+}
 
-    std::string command = "dot -Tpng " + filename + " -o " + filename + ".png";
-    system(command.c_str());
+bool ADG::moveit_execute(std::shared_ptr<MoveitInstance> instance, 
+            std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) 
+{
+    instance_ = instance;
+    for (int i = 0; i < num_robots_; i++) {
+        executed_acts_.push_back(std::make_unique<std::atomic<int>>(0));
+    }
+    return TPG::moveit_execute(instance, move_group);
+}
 
-    return true;
-
+bool ADG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients) 
+{
+    for (int i = 0; i < num_robots_; i++) {
+        executed_acts_.push_back(std::make_unique<std::atomic<int>>(0));
+    }
+    return TPG::moveit_mt_execute(joint_names, clients);
 }
 
 }

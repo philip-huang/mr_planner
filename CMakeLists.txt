@@ -60,7 +60,7 @@ include_directories(SYSTEM ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${EIGEN3_
 # /*                               Create Library                               */
 # /* -------------------------------------------------------------------------- */
 file(GLOB src_files src/instance.cpp src/planner.cpp src/SingleAgentPlanner.cpp
-                    src/logger.cpp src/tpg.cpp src/adg.cpp)
+                    src/logger.cpp src/tpg.cpp src/adg.cpp src/task.cpp)
 
 add_library(${PROJECT_NAME} SHARED ${src_files})
 

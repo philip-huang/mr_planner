@@ -19,7 +19,7 @@ def eval_setting(ns, robot_name, load_tpg, t, tight, biased, random_shortcut, pl
                  loop_type):
     assert loop_type in ['fwd_diter', 'bwd_diter', 'iter']
 
-    base_directory = f'/root/catkin_ws/src/mr_planner/outputs/'
+    base_directory = f'/home/philip/catkin_ws/src/mr_planner/outputs/'
     if load_tpg:
         directory = base_directory + f't={t}_{"random" if random_shortcut else loop_type}_{("tight" if tight else "loose")}{"_biased" if biased else ""}'
     else:

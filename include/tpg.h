@@ -187,16 +187,16 @@ namespace TPG {
         TPG() = default;
         // copy constructor
         TPG(const TPG &tpg);
-        void reset();
+        virtual void reset();
         virtual bool init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTrajectory> &solution, const TPGConfig &config);
         virtual bool optimize(std::shared_ptr<PlanInstance> instance, const TPGConfig &config);
-        bool saveToDotFile(const std::string &filename) const;
-        bool moveit_execute(std::shared_ptr<PlanInstance> instance, 
-            std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const;
-        bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const;
-        bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
-        void update_joint_states(const std::vector<double> &joint_states, int robot_id);
-        void saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const;
+        virtual bool saveToDotFile(const std::string &filename) const;
+        virtual bool moveit_execute(std::shared_ptr<MoveitInstance> instance, 
+            std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group);
+        virtual bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client);
+        virtual bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
+        virtual void update_joint_states(const std::vector<double> &joint_states, int robot_id);
+        virtual void saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const;
         void getSolution(std::vector<RobotTrajectory> &solution) const {
             solution = solution_;
         }

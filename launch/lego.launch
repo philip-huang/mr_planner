@@ -33,7 +33,8 @@
 
     <!-- Start the planning node -->
     
-    <node name="lego_node" pkg="mr_planner" type="lego_node" output="screen">
+    <node launch-prefix="xterm -e gdb --args" name="lego_node" pkg="mr_planner" type="lego_node" output="screen">
+            <param name="log" value="debug"/>
         <param name="fullorder_targets_filename" value="$(find mr_planner)/assembly_steps/stairs_top.csv" />
         <param name="planner_type" value="PrioritizedPlanning"/>
         <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>

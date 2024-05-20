@@ -6,6 +6,8 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <moveit/robot_state/robot_state.h>
+#include <moveit/collision_detection_bullet/collision_env_bullet.h>
+#include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -91,24 +93,24 @@ public:
         kinematic_state_->setToDefaultValues();
          // Create the planning scene from robot model
         // Planning scene monitor.
-        planning_scene_monitor_ = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>("robot_description");
-        planning_scene_monitor_->startSceneMonitor();
-        planning_scene_monitor_->startStateMonitor();
-        planning_scene_monitor_->startWorldGeometryMonitor();
-        planning_scene_monitor_->requestPlanningSceneState();
+        // planning_scene_monitor_ = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>("robot_description");
+        // planning_scene_monitor_->startSceneMonitor();
+        // planning_scene_monitor_->startStateMonitor();
+        // planning_scene_monitor_->startWorldGeometryMonitor();
+        // planning_scene_monitor_->requestPlanningSceneState();
         ros::Duration(0.3).sleep();
-        planning_scene_ = planning_scene_monitor_->getPlanningScene();
+        planning_scene_ = std::make_shared<planning_scene::PlanningScene>(robot_model_);
+        // planning_scene_->setActiveCollisionDetector(collision_detection::CollisionDetectorAllocatorBullet::create(), true);
 
         planning_scene_diff_client = nh_.serviceClient<moveit_msgs::ApplyPlanningScene>("apply_planning_scene");
         planning_scene_diff_client.waitForExistence();
-        get_planning_scene_client = nh_.serviceClient<moveit_msgs::GetPlanningScene>("get_planning_scene");
-        get_planning_scene_client.waitForExistence();
 
         instance_ = std::make_shared<MoveitInstance>(kinematic_state_, move_group_->getName(), planning_scene_);
         instance_->setNumberOfRobots(2);
         instance_->setRobotNames({"left_arm", "right_arm"});
         instance_->setRobotDOF(0, 7);
         instance_->setRobotDOF(1, 7);
+        instance_->setPlanningSceneDiffClient(planning_scene_diff_client);
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
 
     }
@@ -455,70 +457,26 @@ public:
     }
 
     void addMoveitCollisionObject(const std::string &name) {
-        Object obj;
-        
-        // define the object
-        obj.name = name;
-        obj.state = Object::State::Static;
-        obj.parent_link = "world";
-        obj.shape = Object::Shape::Box;
-
-        // get the starting pose and size
-        geometry_msgs::Pose box_pose;
-        if (name == "table") {
-            lego_ptr_->get_table_size(obj.length, obj.width, obj.height);
-            box_pose = lego_ptr_->get_table_pose();
-
-        } else {
-            lego_ptr_->get_brick_sizes(name, obj.length, obj.width, obj.height);
-            box_pose = lego_ptr_->get_init_brick_pose(name);
-        }
-        obj.x = box_pose.position.x;
-        obj.y = box_pose.position.y;
-        obj.z = box_pose.position.z - obj.height/2;
-        obj.qx = box_pose.orientation.x;
-        obj.qy = box_pose.orientation.y;
-        obj.qz = box_pose.orientation.z;
-        obj.qw = box_pose.orientation.w; 
+        Object obj = getLegoStart(name);
 
         // add the object to the planning scene
         instance_->addMoveableObject(obj);
-
-        // update the moveit simulation
-        moveit_msgs::ApplyPlanningScene srv;
-        srv.request.scene = instance_->getPlanningSceneDiff();
-        planning_scene_diff_client.call(srv);
+        instance_->updateScene();
         
-        moveit_msgs::GetPlanningScene srv_get;
-        srv_get.request.components.components = moveit_msgs::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-        if (!get_planning_scene_client.call(srv_get)) {
-            ROS_WARN("Failed to get planning scene collision matrix");
-            return;
-        }
-
-        lego_collision_objects_.insert(name);    
-        current_acm_ = srv_get.response.scene.allowed_collision_matrix;
-        
-        ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), box_pose.position.x, box_pose.position.y, box_pose.position.z);
+        ROS_INFO("Adding collision object %s at %f %f %f", name.c_str(), obj.x, obj.y, obj.z);
         ROS_INFO("Added collision object %s to world frame", name.c_str());
     }
 
-    void attachMoveitCollisionObject(const std::string &name, int robot_id, const std::string &link_name) {
-        instance_->attachObjectToRobot(name, robot_id, link_name);
-        
-        moveit_msgs::ApplyPlanningScene srv;
-        srv.request.scene = instance_->getPlanningSceneDiff();
-        planning_scene_diff_client.call(srv);
+    void attachMoveitCollisionObject(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) {
+        instance_->attachObjectToRobot(name, robot_id, link_name, pose);
+        instance_->updateScene();
 
         ROS_INFO("Attached collision object %s to %s", name.c_str(), link_name.c_str());
     }
 
-    void detachMoveitCollisionObject(const std::string &name) {
-        instance_->detachObjectFromRobot(name);
-
-        moveit_msgs::ApplyPlanningScene srv;
-        srv.request.scene = instance_->getPlanningSceneDiff();
-        planning_scene_diff_client.call(srv);
+    void detachMoveitCollisionObject(const std::string &name, const RobotPose &pose) {
+        instance_->detachObjectFromRobot(name, pose);
+        instance_->updateScene();
 
         ROS_INFO("Removed collision object %s", name.c_str());
     }
@@ -528,23 +486,32 @@ public:
         brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
     }
 
-    Object getLegoStart(int task_idx) {
-        auto cur_graph_node = task_json_[std::to_string(task_idx)];
-        std::string brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
-
-        geometry_msgs::Pose box_pose = lego_ptr_->get_init_brick_pose(brick_name);
-        Object obj = instance_->getObject(brick_name);
+    Object getLegoStart(const std::string &brick_name) {
+        Object obj;
+        
         // define the object
+        obj.name = brick_name;
         obj.state = Object::State::Static;
         obj.parent_link = "world";
+        obj.shape = Object::Shape::Box;
 
+        // get the starting pose and size
+        geometry_msgs::Pose box_pose;
+        if (brick_name == "table") {
+            lego_ptr_->get_table_size(obj.length, obj.width, obj.height);
+            box_pose = lego_ptr_->get_table_pose();
+
+        } else {
+            lego_ptr_->get_brick_sizes(brick_name, obj.length, obj.width, obj.height);
+            box_pose = lego_ptr_->get_init_brick_pose(brick_name);
+        }
         obj.x = box_pose.position.x;
         obj.y = box_pose.position.y;
-        obj.z = box_pose.position.z;
+        obj.z = box_pose.position.z - obj.height/2;
         obj.qx = box_pose.orientation.x;
         obj.qy = box_pose.orientation.y;
         obj.qz = box_pose.orientation.z;
-        obj.qw = box_pose.orientation.w;
+        obj.qw = box_pose.orientation.w; 
 
         return obj;
     }
@@ -576,11 +543,8 @@ public:
 
     bool setCollision(const std::string& object_id, const std::string& link_name, bool allow) {
         instance_->setCollision(object_id, link_name, allow);
+        instance_->updateScene();
 
-        moveit_msgs::ApplyPlanningScene srv_apply;
-        srv_apply.request.scene = instance_->getPlanningSceneDiff();
-        planning_scene_diff_client.call(srv_apply);
- 
         if (allow)
             ROS_INFO("Allow collision between %s and %s", object_id.c_str(), link_name.c_str());
         else
@@ -639,6 +603,10 @@ public:
         return std::make_shared<TPG::TPG>(*tpg_);
     }
 
+    std::vector<double> getCurrentJoints() {
+        return current_joints_;
+    }
+
 
 private:
     ros::NodeHandle nh_;
@@ -647,20 +615,16 @@ private:
     robot_state::RobotStatePtr kinematic_state_;
     std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
     std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
-    planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
     planning_scene::PlanningScenePtr planning_scene_;
 
     // lego pointer
     lego_manipulation::lego::Lego::Ptr lego_ptr_;
     Json::Value task_json_;
     int num_tasks_ = 0;
-    std::set<std::string> lego_collision_objects_;
-    moveit_msgs::AllowedCollisionMatrix current_acm_;
 
     // update gazebo state
     ros::ServiceClient set_state_client_;
     ros::ServiceClient planning_scene_diff_client;
-    ros::ServiceClient get_planning_scene_client;
 
     // joint names for execution
     std::vector<std::string> joint_names_;
@@ -729,6 +693,8 @@ int main(int argc, char** argv) {
 
     // wait 2 seconds
     ros::Duration(2).sleep();
+    planner.setup_once();
+    ROS_INFO("Execution setup done");
 
     // Read the robot poses
     std::vector<std::vector<GoalPose>> all_poses;
@@ -741,11 +707,18 @@ int main(int argc, char** argv) {
         planner.initLegoPositions();
     }
 
-    planner.setup_once();
-    ROS_INFO("Execution setup done");
+    // Record the initial poses
+    std::vector<GoalPose> init_pose(2);
+    std::vector<double> init_joints = planner.getCurrentJoints();
+    init_pose[0].joint_values.resize(7, 0.0);
+    init_pose[1].joint_values.resize(7, 0.0);
+    for (int i = 0; i < 6; i++) {
+        init_pose[0].joint_values[i] = init_joints[i];
+        init_pose[1].joint_values[i] = init_joints[7+i];
+    }
+
 
     // Start Execution Loop
-    auto adg = std::make_shared<TPG::ADG>(2);
     if (load_adg) {
         // open the file safely
         std::string filename = output_dir + "/adg.txt";
@@ -754,6 +727,7 @@ int main(int argc, char** argv) {
             ROS_ERROR("Failed to open file: %s", filename.c_str());
             return -1;
         }
+        auto adg = std::make_shared<TPG::ADG>();
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
         planner.set_tpg(adg);
@@ -764,6 +738,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    ActivityGraph act_graph(2);
     std::vector<std::shared_ptr<TPG::TPG>> tpgs;
     int mode = 1;
     int task_idx = 1;
@@ -772,96 +747,129 @@ int main(int argc, char** argv) {
     bool use_robot2 = false;
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
+        // set the activity's start and goal pose
+        RobotPose pose0 = planner.getInstance()->initRobotPose(0);
+        pose0.joint_values = (i==0) ? init_pose[0].joint_values : all_poses[i-1][0].joint_values;
+        
+        RobotPose pose1 = planner.getInstance()->initRobotPose(1);
+        pose1.joint_values = (i==0) ? init_pose[1].joint_values : all_poses[i-1][1].joint_values;
+        
 
-        if (mode == 0 || mode == 6) {
-            adg->add_activity(0, TPG::Activity::Type::home);
-            adg->add_activity(1, TPG::Activity::Type::home);
-            planner.setCollision("table", "left_arm_link_tool", false);
+        if (mode == 0) {
+            act_graph.add_act(0, Activity::Type::home);
+            act_graph.add_act(1, Activity::Type::home);
         }
         if (mode == 1) {
-            Object obj = planner.getLegoStart(task_idx);
-            adg->add_activity(0, TPG::Activity::Type::pick_tilt_up, obj);
-            adg->add_activity(1, TPG::Activity::Type::home);
             planner.getLegoBrickName(task_idx, brick_name);
+            Object obj = planner.getLegoStart(brick_name);
+            ObjPtr obj_node = act_graph.add_obj(obj);
+            
+            act_graph.add_act(0, Activity::Type::pick_tilt_up);
+            act_graph.add_act(1, Activity::Type::home);
+            
             planner.setCollision(brick_name, "left_arm_link_tool", true);
+            act_graph.set_collision(brick_name, "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_tilt_up), true);
         }
         if (mode == 2) {
-            adg->add_activity(0, TPG::Activity::Type::pick_up);
-            adg->add_activity(1, TPG::Activity::Type::home);
+            act_graph.add_act(0, Activity::Type::pick_up);
+            act_graph.add_act(1, Activity::Type::home);
         }
         if (mode == 3) {
-            adg->add_activity(0, TPG::Activity::Type::pick_down);
-            adg->add_activity(1, TPG::Activity::Type::home);
+            act_graph.add_act(0, Activity::Type::pick_down);
+            act_graph.add_act(1, Activity::Type::home);
         }
         if (mode == 4) {
             ROS_INFO("attach lego to robot 0");
-            adg->add_activity(0, TPG::Activity::Type::pick_twist);
-            adg->add_activity(1, TPG::Activity::Type::home);
-            planner.attachMoveitCollisionObject(brick_name, 0, "left_arm_link_tool");
+            act_graph.add_act(0, Activity::Type::pick_twist);
+            act_graph.add_act(1, Activity::Type::home);
+            planner.attachMoveitCollisionObject(brick_name, 0, "left_arm_link_tool", pose0);
+            act_graph.attach_obj(act_graph.get_last_obj(brick_name), "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist));
             planner.setCollision("table", "left_arm_link_tool", true);
+            act_graph.set_collision("table", "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist), true);
         }
         if (mode == 5) {
-            adg->add_activity(0, TPG::Activity::Type::pick_twist_up);
-            adg->add_activity(1, TPG::Activity::Type::home);
+            act_graph.add_act(0, Activity::Type::pick_twist_up);
+            act_graph.add_act(1, Activity::Type::home);
+        }
+        if (mode == 6) {
+            act_graph.add_act(0, Activity::Type::home);
+            act_graph.add_act(1, Activity::Type::home);
+            planner.setCollision("table", "left_arm_link_tool", false);
+            act_graph.set_collision("table", "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist), false);
         }
         if (mode == 7) {
-            adg->add_activity(0, TPG::Activity::Type::drop_tilt_up);
+            act_graph.add_act(0, Activity::Type::drop_tilt_up);
             if (poses[1].use_robot) {
                 use_robot2 = true;
-                adg->add_activity(1, TPG::Activity::Type::support_pre);
+                act_graph.add_act(1, Activity::Type::support_pre);
             } else {
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(1, Activity::Type::home);
             }
         }
         if (mode == 8) {
-            adg->add_activity(0, TPG::Activity::Type::drop_up);
+            act_graph.add_act(0, Activity::Type::drop_up);
             if (use_robot2) {
+                act_graph.add_act(1, Activity::Type::support);
                 planner.setCollision(last_brick_name, "right_arm_link_tool", true);
-                adg->add_activity(1, TPG::Activity::Type::support);
+                act_graph.set_collision(last_brick_name, "right_arm_link_tool", act_graph.get_last_act(1, Activity::Type::support), true);
             } else {
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(1, Activity::Type::home);
             }
         }
         if (mode == 9) {
             if (use_robot2) {
-                adg->add_activity(0, TPG::Activity::Type::drop_down, adg->get_last_activity(1, TPG::Activity::Type::support));
-                adg->add_activity(1, TPG::Activity::Type::support);
+                act_graph.add_act(0, Activity::Type::drop_down, act_graph.get_last_act(1, Activity::Type::support));
+                act_graph.add_act(1, Activity::Type::support);
             } else {
-                adg->add_activity(0, TPG::Activity::Type::drop_down);
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(0, Activity::Type::drop_down);
+                act_graph.add_act(1, Activity::Type::home);
             }
             planner.setCollision(last_brick_name, brick_name, true);
+            act_graph.set_collision(last_brick_name, brick_name, act_graph.get_last_act(0, Activity::Type::drop_down), true);
             last_brick_name = brick_name;
         }
         if (mode == 10) {
             ROS_INFO("detach lego from robot 0");
-            adg->add_activity(0, TPG::Activity::Type::drop_twist);
+            Object obj = planner.getLegoTarget(task_idx);
+            act_graph.add_obj(obj);
+            act_graph.add_act(0, Activity::Type::drop_twist);
             if (use_robot2) {
-                adg->add_activity(1, TPG::Activity::Type::support);
+                act_graph.add_act(1, Activity::Type::support);
             } else {
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(1, Activity::Type::home);
             }
-            planner.detachMoveitCollisionObject(brick_name);
+            planner.detachMoveitCollisionObject(brick_name, pose0);
+            act_graph.detach_obj(act_graph.get_last_obj(brick_name), act_graph.get_last_act(0, Activity::Type::drop_twist));
         }
         if (mode == 11) {
-            Object obj = planner.getLegoTarget(task_idx);
-            adg->add_activity(0, TPG::Activity::Type::drop_twist_up, obj);
+            act_graph.add_act(0, Activity::Type::drop_twist_up);
             if (use_robot2) {
-                adg->add_activity(1, TPG::Activity::Type::support_pre, adg->get_last_activity(0, TPG::Activity::Type::drop_twist_up));
+                act_graph.add_act(1, Activity::Type::support_pre, act_graph.get_last_act(0, Activity::Type::drop_twist_up));
             } else {
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(1, Activity::Type::home);
             }
         }
         if (mode == 12) {
-            adg->add_activity(0, TPG::Activity::Type::home);
+            act_graph.add_act(0, Activity::Type::home);
             if (poses[1].use_robot) {
+                act_graph.add_act(1, Activity::Type::home);
                 planner.setCollision(last_brick_name, "right_arm_link_tool", false);
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.set_collision(last_brick_name, "right_arm_link_tool", act_graph.get_last_act(1, Activity::Type::home), false);
             } else {
-                adg->add_activity(1, TPG::Activity::Type::home);
+                act_graph.add_act(1, Activity::Type::home);
             }
             planner.setCollision(brick_name, "left_arm_link_tool", false);
+            act_graph.set_collision(brick_name, "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::home), false);
         }
+
+        // set start and goal robot pose in task graph
+        act_graph.get_last_act(0)->start_pose = pose0;
+        pose0.joint_values = poses[0].joint_values;
+        act_graph.get_last_act(0)->end_pose = pose0;
+        
+        act_graph.get_last_act(1)->start_pose = pose1;
+        pose1.joint_values = poses[1].joint_values;
+        act_graph.get_last_act(1)->end_pose = pose1;
 
         ROS_INFO("mode %d, task_id: %d, use robot 1: %d, use robot 2: %d", mode, task_idx, poses[0].use_robot, poses[1].use_robot);
         if (load_tpg) {
@@ -869,7 +877,7 @@ int main(int argc, char** argv) {
             if (tpg != nullptr) {
                 planner.set_tpg(tpg);
                 planner.reset_joint_states_flag(); // do this after tpg is set
-                planner.execute(tpg);
+                //planner.execute(tpg);
             }
         }
         else {
@@ -889,22 +897,20 @@ int main(int argc, char** argv) {
     }
     
     // create adg
-    adg->init(planner.getInstance(), tpg_config, tpgs);
+    auto adg = std::make_shared<TPG::ADG>(act_graph);
+    adg->init_from_tpgs(planner.getInstance(), tpg_config, tpgs);
 
     // save adg
     ROS_INFO("Saving ADG to file");
-    adg->saveADGToDotFile(output_dir + "/adg.dot");
+    act_graph.saveGraphToFile(output_dir + "/activity_graph.dot");
     std::ofstream ofs(output_dir + "/adg.txt");
     if (!ofs.is_open()) {
         ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
         return -1;
     }
+    // adg->saveToDotFile(output_dir + "/adg.dot");
     boost::archive::text_oarchive oa(ofs);
     oa << adg;
-
-    planner.set_tpg(adg);
-    planner.reset_joint_states_flag();
-    planner.execute(adg);
 
     ros::shutdown();
     return 0;

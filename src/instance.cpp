@@ -55,6 +55,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     // set the robot state to the one we are checking
     moveit::core::RobotState robot_state = planning_scene_->getCurrentStateNonConst();
     
+    
     std::vector<double> all_joints;
     collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrixNonConst();
 
@@ -306,7 +307,31 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
     planning_scene_diff_ = planning_scene;
 }
 
-void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name) {
+void MoveitInstance::moveObject(const Object& obj) {
+    moveit_msgs::CollisionObject co;
+    co.header.frame_id = obj.parent_link;
+    co.header.stamp = ros::Time::now();
+    co.id = obj.name;
+    
+    co.pose.position.x = obj.x;
+    co.pose.position.y = obj.y;
+    co.pose.position.z = obj.z ;
+    co.pose.orientation.x = obj.qx;
+    co.pose.orientation.y = obj.qy;
+    co.pose.orientation.z = obj.qz;
+    co.pose.orientation.w = obj.qw;
+
+    co.operation = co.MOVE;
+ 
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.world.collision_objects.push_back(co);
+    planning_scene.is_diff = true;
+
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+    planning_scene_diff_ = planning_scene;
+}
+
+void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose& pose) {
     /*
     directly attach the object to the robot
     */
@@ -353,11 +378,11 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;
     if (old_parent_link == "world") {
-        moveit_msgs::CollisionObject co_remove;
-        co_remove.id = obj.name;
-        co_remove.header.frame_id = old_parent_link;
-        co_remove.operation = co_remove.REMOVE;
-        planning_scene.world.collision_objects.push_back(co_remove);
+        // moveit_msgs::CollisionObject co_remove;
+        // co_remove.id = obj.name;
+        // co_remove.header.frame_id = old_parent_link;
+        // co_remove.operation = co_remove.REMOVE;
+        // planning_scene.world.collision_objects.push_back(co_remove);
     } else {
         moveit_msgs::AttachedCollisionObject co_remove;
         co_remove.object.id = obj.name;
@@ -367,27 +392,35 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
     }
     planning_scene.robot_state.attached_collision_objects.push_back(co);
     planning_scene.robot_state.is_diff = true;
-    planning_scene_->usePlanningSceneMsg(planning_scene);
     
+    auto joint_names = planning_scene_->getRobotModel()->getJointModelGroup(robot_names_[robot_id])->getActiveJointModelNames();
+    for (int i = 0; i < pose.joint_values.size(); i++) {
+        planning_scene.robot_state.joint_state.name.push_back(joint_names[i]);
+        planning_scene.robot_state.joint_state.position.push_back(pose.joint_values[i]);
+    }
+    
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+
     planning_scene_diff_ = planning_scene;
 
 }
 
-void MoveitInstance::detachObjectFromRobot(const std::string& name) {
+void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotPose& pose) {
     Object &obj = objects_[name];
     obj.state = Object::State::Static;
     obj.robot_id = 0;
     std::string old_parent_link = obj.parent_link;
+    obj.parent_link = "world";
 
     moveit_msgs::AttachedCollisionObject co_remove;
     co_remove.object.id = obj.name;
     co_remove.link_name = old_parent_link;
     co_remove.object.operation = co_remove.object.REMOVE;
 
-    moveit_msgs::CollisionObject co;
-    co.id = obj.name;
-    co.header.frame_id = "world";
-    co.operation = co.ADD;
+    // moveit_msgs::CollisionObject co;
+    // co.id = obj.name;
+    // co.header.frame_id = "world";
+    // co.operation = co.ADD;
 
     // geometry_msgs::Pose world_pose;
     // world_pose.position.x = obj.x;
@@ -412,14 +445,24 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name) {
 
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;
-    planning_scene.world.collision_objects.push_back(co);
+    //planning_scene.world.collision_objects.push_back(co);
     planning_scene.robot_state.is_diff = true;
     planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
+    auto joint_names = planning_scene_->getRobotModel()->getJointModelGroup(robot_names_[pose.robot_id])->getActiveJointModelNames();
+    for (int i = 0; i < pose.joint_values.size(); i++) {
+        planning_scene.robot_state.joint_state.name.push_back(joint_names[i]);
+        planning_scene.robot_state.joint_state.position.push_back(pose.joint_values[i]);
+    }
 
     planning_scene_->usePlanningSceneMsg(planning_scene);
 
     planning_scene_diff_ = planning_scene;
+}
 
+void MoveitInstance::updateScene() {
+    moveit_msgs::ApplyPlanningScene srv;
+    srv.request.scene = planning_scene_diff_;
+    planning_scene_diff_client_.call(srv);
 }
 
 bool MoveitInstance::setCollision(const std::string& obj_name, const std::string& link_name, bool allow) {

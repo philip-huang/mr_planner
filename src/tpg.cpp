@@ -1405,8 +1405,8 @@ bool TPG::saveToDotFile(const std::string& filename) const {
     return true;
 }
 
-bool TPG::moveit_execute(std::shared_ptr<PlanInstance> instance, 
-        std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) const {
+bool TPG::moveit_execute(std::shared_ptr<MoveitInstance> instance, 
+        std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group) {
     // convert solution to moveit plan and execute
     moveit::planning_interface::MoveGroupInterface::Plan my_plan;
     trajectory_msgs::JointTrajectory &joint_traj = my_plan.trajectory_.joint_trajectory;
@@ -1420,7 +1420,7 @@ bool TPG::moveit_execute(std::shared_ptr<PlanInstance> instance,
     return true;
 }
 
-bool TPG::actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) const {
+bool TPG::actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client) {
     moveit_msgs::ExecuteTrajectoryGoal goal;
     
     goal.trajectory.joint_trajectory.joint_names = joint_names;

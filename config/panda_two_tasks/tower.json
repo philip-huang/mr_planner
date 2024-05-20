@@ -1,0 +1,88 @@
+{
+    "objects": {
+        "box_1": {
+            "shape": "box",
+            "length": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "x": 0.0,
+            "y": -0.3,
+            "z": 0.15,
+            "ori_x": 0.0,
+            "ori_y": 0.0,
+            "ori_z": 0.0,
+            "grip_pose": "top"
+        },
+        "box_2": {
+            "shape": "box",
+            "length": 0.1,
+            "width": 0.1,
+            "height": 0.1,
+            "x": 0.0,
+            "y": -0.3,
+            "z": 0.25,
+            "ori_x": 0.0,
+            "ori_y": 0.0,
+            "ori_z": 0.0,
+            "grip_pose": "top"
+        }
+    },
+
+    "goal": {
+        "box_1": {
+            "x": 0.0,
+            "y": 0.3,
+            "z": 0.25,
+            "ori_x": 0.0,
+            "ori_y": 0.0,
+            "ori_z": 0.0
+        },
+        "box_2": {
+            "x": 0.0,
+            "y": 0.3,
+            "z": 0.15,
+            "ori_x": 0.0,
+            "ori_y": 0.0,
+            "ori_z": 0.0
+        }
+
+    },
+
+    "sequence": {
+        "panda0_arm": [
+            {
+                "task": "pick",
+                "obj": "box_2",
+                "id": 0
+            },
+            {
+                "task": "place",
+                "obj": "box_2",
+                "id": 1
+            }
+        ],
+        "panda1_arm": [
+            {
+                "task": "pick",
+                "obj": "box_1",
+                "id": 2
+            },
+            {
+                "task": "place",
+                "obj": "box_1",
+                "id": 3
+            }
+        ],
+        "task_dep": [
+            {
+                "task": 2,
+                "dep": 0
+            },
+            {
+                "task": 3,
+                "dep": 1
+            }
+        ]
+    }
+    
+}

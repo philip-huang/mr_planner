@@ -139,7 +139,11 @@ public:
     virtual bool sample(RobotPose &pose) = 0;
     virtual double getVMax(int robot_id);
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
-
+    virtual void addMoveableObject(const Object& obj) { throw std::runtime_error("Not implemented");};
+    virtual void moveObject(const Object& obj) { throw std::runtime_error("Not implemented");};
+    virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
+    virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
+    virtual void updateScene() = 0;
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
 
@@ -200,13 +204,18 @@ public:
     virtual bool sample(RobotPose &pose) override;
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const override;
     // Implementation of abstract methods using MoveIt functionalities
-
-    virtual void addMoveableObject(const Object& obj);
-    virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name);
-    virtual void detachObjectFromRobot(const std::string& name);
+    virtual void addMoveableObject(const Object& obj) override;
+    virtual void moveObject(const Object& obj) override;
+    virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) override;
+    virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) override;
     virtual moveit_msgs::PlanningScene getPlanningSceneDiff() const {
         return planning_scene_diff_;
     }
+    virtual void setPlanningSceneDiffClient(ros::ServiceClient &client) {
+        planning_scene_diff_client_ = client;
+    }
+    virtual void updateScene() override;
+
     virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow);
 
 private:
@@ -217,6 +226,7 @@ private:
 
     /* store the planning scene diff temporarily*/
     moveit_msgs::PlanningScene planning_scene_diff_;
+    ros::ServiceClient planning_scene_diff_client_;
 
     // random number generator
     std::mt19937 rng_;
