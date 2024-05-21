@@ -336,7 +336,7 @@ public:
             tpg_->reset();
             
             success &= tpg_->init(instance_, solution, tpg_config);
-            success &= tpg_->optimize(instance_, tpg_config);
+            //success &= tpg_->optimize(instance_, tpg_config);
             saveTPG(tpg_, output_dir_ + "/tpg_" + std::to_string(counter_) + ".txt");
             tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
 
@@ -667,6 +667,7 @@ int main(int argc, char** argv) {
     bool mfi = false;
     bool load_tpg = false;
     bool load_adg = false;
+    bool benchmark = false;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
@@ -682,12 +683,14 @@ int main(int argc, char** argv) {
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
     nh.param<bool>("load_adg", load_adg, false);
+    nh.param<bool>("benchmark", benchmark, false);
 
-    // Initialize the DUal Arm Planner
+    // Initialize the Dual Arm Planner
     setLogLevel(LogLevel::INFO);
 
     TPG::TPGConfig tpg_config;
-    tpg_config.shortcut_time = 0.1;
+    nh.param<double>("shortcut_time", tpg_config.shortcut_time, 0.1);
+    nh.param<bool>("tight_shortcut", tpg_config.tight_shortcut, false);
 
     DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
 
@@ -730,9 +733,15 @@ int main(int argc, char** argv) {
         auto adg = std::make_shared<TPG::ADG>();
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
-        planner.set_tpg(adg);
-        planner.reset_joint_states_flag();
-        planner.execute(adg);
+
+        if (benchmark) {
+            adg->optimize(planner.getInstance(), tpg_config);
+        }
+        else {
+            planner.set_tpg(adg);
+            planner.reset_joint_states_flag();
+            planner.execute(adg);
+        }
 
         ros::shutdown();
         return 0;
@@ -899,6 +908,7 @@ int main(int argc, char** argv) {
     // create adg
     auto adg = std::make_shared<TPG::ADG>(act_graph);
     adg->init_from_tpgs(planner.getInstance(), tpg_config, tpgs);
+    adg->optimize(planner.getInstance(), tpg_config);
 
     // save adg
     ROS_INFO("Saving ADG to file");

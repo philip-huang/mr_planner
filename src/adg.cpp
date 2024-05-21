@@ -3,6 +3,136 @@
 
 namespace TPG {
 
+ShortcutSamplerADG::ShortcutSamplerADG(const TPGConfig &config, const ActivityGraph &act_graph,
+                    const std::vector<std::vector<std::shared_ptr<Node>>> &intermediate_nodes)
+    : ShortcutSampler(config)
+{
+    act_graph_ = act_graph;
+    intermediate_nodes_ = intermediate_nodes;
+}
+
+void ShortcutSamplerADG::init(const std::vector<std::shared_ptr<Node>> &start_nodes,
+    const std::vector<int> &numNodes)
+{
+    num_robots_ = start_nodes.size();
+    nodes_.clear();
+    act_ids_.clear();
+    act_lengths_.clear();
+
+    nodes_.resize(num_robots_);
+    act_ids_.resize(num_robots_);
+    act_lengths_.resize(num_robots_);
+
+    // save all the nodes, and activity ids, and activity lengths
+
+    // for (int i = 0; i < num_robots_; i++) {
+    //     std::vector<std::shared_ptr<Node>> nodes_i;
+    //     std::vector<int> act_ids_i;
+    //     for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
+    //         std::shared_ptr<Node> node = intermediate_nodes_[i][act_id * 2];
+    //         std::shared_ptr<Node> act_id_i_end = intermediate_nodes_[i][act_id * 2 + 1];
+    //         std::shared_ptr<Activity> act_i = act_graph_.get(i, act_id);
+    //         while (act_i->type == Activity::Type::home && act_id < act_graph_.num_activities(i) - 1) {
+    //             act_id ++;
+    //             act_i = act_graph_.get(i, act_id);
+    //             act_id_i_end = intermediate_nodes_[i][act_id * 2 + 1];
+    //             act_lengths_[i].push_back(0);
+    //         }
+    //         std::cout << "robot " << i << " nodes:  ";
+    //         int num_node_act_i = 0;
+    //         while (node != nullptr && node->timeStep <= act_id_i_end->timeStep) {
+    //             nodes_i.push_back(node);
+    //             act_ids_i.push_back(act_id);
+    //             std::cout << node->timeStep << " ";
+    //             node = node->Type1Next;
+    //             num_node_act_i++;
+    //         }
+    //         act_lengths_[i].push_back(num_node_act_i);
+    //         std::cout << std::endl;
+    //     }
+
+    //     nodes_[i] = nodes_i;
+    //     act_ids_[i] = act_ids_i;
+    // }
+
+    for (int i = 0; i < num_robots_; i++) {
+        auto node = start_nodes[i];
+        int j = 0;
+
+        std::vector<std::shared_ptr<Node>> nodes_i;
+        std::vector<int> act_ids_i;
+        int act_id = 0;
+
+        while (node != nullptr) {
+            // add node
+            nodes_i.push_back(node);
+
+            // add activity id
+            auto act_i = act_graph_.get(i, act_id);
+            // we skip home activity
+            while (act_id < act_graph_.num_activities(i) - 1 && act_i->type == Activity::Type::home) {
+                act_id++;
+                act_i = act_graph_.get(i, act_id);
+            }
+            act_ids_i.push_back(act_id);
+
+            // check if we need to switch to next activity
+            if (intermediate_nodes_[i][act_id * 2 + 1]->timeStep == node->timeStep) {
+                act_id++;
+            }
+
+            // iterate to next node
+            j++;
+            node = node->Type1Next;
+        }
+        nodes_[i] = nodes_i;
+        act_ids_[i] = act_ids_i;
+
+        act_lengths_[i].resize(act_graph_.num_activities(i), 0);
+        for (int act_id : act_ids_[i]) {
+            act_lengths_[i][act_id]++;
+        }
+
+    }
+    numNodes_ = numNodes;
+
+    resetFailedShortcuts();
+}
+
+
+bool ShortcutSamplerADG::sampleUniform(Shortcut &shortcut) {
+    int i = std::rand() % num_robots_;
+
+    int startNode = std::rand() % numNodes_[i];
+    int act_id = act_ids_[i][startNode];
+    int act_length = 0;
+    shortcut.activity = act_graph_.get(i, act_id);
+
+    for (int j = 0; j <= act_id; j++) {
+        act_length += act_lengths_[i][j];
+    }
+
+    if (startNode >= act_length - 2) {
+        return false;
+    }
+    int length = std::rand() % (act_length - startNode - 2) + 2;
+    int endNode = startNode + length;
+    // if (endNode <= 1 || startNode >= endNode - 1) {
+    //     return false;
+    // }
+
+    shortcut.ni = nodes_[i][startNode];
+    shortcut.nj = nodes_[i][endNode];
+    assert(shortcut.activity != nullptr);
+
+    log("Sampled shortcut from robot " + std::to_string(i) + " activity " + shortcut.activity->type_string() + 
+        " timestep " + std::to_string(shortcut.ni.lock()->timeStep) +
+        " to timestep " + std::to_string(shortcut.nj.lock()->timeStep), LogLevel::INFO);
+    
+    return true;
+}
+
+
 bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, const std::vector<std::shared_ptr<TPG>> &tpgs) {
     dt_ = config.dt;
     config_ = config;
@@ -13,10 +143,11 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     intermediate_nodes_.resize(num_robots_);
     numNodes_.resize(num_robots_, 0);
     solution_.resize(num_robots_);
+
     for (int i = 0; i < num_robots_; i++) {
         std::vector<std::shared_ptr<Node>> inter_nodes;
         for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
-            auto act = act_graph_.get(i, act_id);
+            std::shared_ptr<const Activity> act = act_graph_.get(i, act_id);
             auto inter_start_node = tpgs[act_id]->getStartNode(i);
             auto inter_end_node = tpgs[act_id]->getEndNode(i);
 
@@ -45,7 +176,7 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     idType2Edges_ = 10000;
     for (int i = 0; i < num_robots_; i++) {
         for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
-            auto act = act_graph_.get(i, act_id);
+            std::shared_ptr<const Activity> act = act_graph_.get(i, act_id);
             for (auto dep : act->type2_prev) {
                 type2Edge edge;
                 edge.edgeId = idType2Edges_++;
@@ -106,6 +237,8 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                     // updated attached / detached object
                     auto act_j = act_graph_.get(j, act_id_j);
                     for (auto obj : act_j->obj_attached) {
+                        instance->moveObject(obj->obj);
+                        instance->updateScene();
                         instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
                         instance->updateScene();
                     }
@@ -165,6 +298,8 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
             }
         }
     }
+    
+    shortcut_sampler_ = std::make_unique<ShortcutSamplerADG>(config, act_graph_, intermediate_nodes_);
 
     transitiveReduction();
     if (hasCycle()) {
@@ -198,6 +333,11 @@ void ADG::update_joint_states(const std::vector<double> &joint_states, int robot
         if (error < 0.1) {
             executed_acts_[robot_id]->fetch_add(1);
             log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::DEBUG);
+            int act_id = executed_acts_[robot_id]->load();
+            while (act_id < act_graph_.num_activities(robot_id) - 1 && act_graph_.get(robot_id, act_id)->type == Activity::Type::home){
+                act_id ++;
+                executed_acts_[robot_id]->fetch_add(1);
+            }
 
             // update any attached object
             if (instance_) {
@@ -232,5 +372,214 @@ bool ADG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_n
     }
     return TPG::moveit_mt_execute(joint_names, clients);
 }
+
+void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut,
+     std::vector<Eigen::MatrixXi> &col_matrix) const {
+    auto ni = shortcut.ni.lock();
+    auto nj = shortcut.nj.lock();
+    // check if there is a shortcut between ni and nj
+    assert(ni->robotId == nj->robotId && ni->timeStep < nj->timeStep - 1);
+
+    int robot_id = ni->robotId;
+    double timeNeeded = instance->computeDistance(ni->pose, nj->pose) / instance->getVMax(ni->robotId);
+    timeNeeded = std::ceil(timeNeeded / dt_) * dt_;
+    int shortcutSteps = timeNeeded / dt_ + 1;
+
+    if (shortcutSteps > (nj->timeStep - ni->timeStep)) {
+        shortcut.col_type = CollisionType::NO_NEED; // no need for shortcut
+        return;
+    }
+
+    // build collision environment
+    std::shared_ptr<Activity> cur_act = shortcut.activity;
+    assert(cur_act != nullptr);
+    
+    instance->resetScene(true);
+    // add all static objects that needs to be collision checked
+    std::vector<ObjPtr> indep_objs = act_graph_.find_indep_obj(cur_act);
+    std::cout << "adding independent objects ";
+    for (auto obj : indep_objs) {
+        std::cout << obj->obj.name << " ";
+        instance->addMoveableObject(obj->obj);
+        instance->updateScene();
+    }
+    std::cout << std::endl;
+
+    for (int act_id = 0; act_id <= cur_act->act_id; act_id++) {
+        // updated attached / detached object
+        std::shared_ptr<const Activity> act_j = act_graph_.get(robot_id, act_id);
+        for (auto obj : act_j->obj_attached) {
+            std::cout << "attaching object " << obj->obj.name << " to robot " << robot_id << " link " << obj->next_attach_link << std::endl;
+            instance->moveObject(obj->obj);
+            //instance->updateScene();
+            instance->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act_j->start_pose);
+            //instance->updateScene();
+        }
+        for (auto obj : act_j->obj_detached) {
+            std::cout << "detaching object " << obj->obj.name << " from robot " << robot_id << std::endl;
+            instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
+            //instance->updateScene();
+        }
+        for (auto col_node : act_j->collision_nodes) {
+            instance->setCollision(col_node.obj_name, col_node.link_name, col_node.allow);
+        }
+    }
+
+    for (int i = 1; i < shortcutSteps - 1; i++) {
+        double alpha = i * dt_ / timeNeeded;
+        RobotPose pose_i = instance->interpolate(ni->pose, nj->pose, alpha);
+
+        // check environment collision
+        if (instance->checkCollision({pose_i}, false) == true) {
+            shortcut.col_type = CollisionType::STATIC; // collide with the evnrionment
+            return;
+        }
+        shortcut.path.push_back(pose_i);
+    }
+
+    auto tic = std::chrono::high_resolution_clock::now();
+
+    // find dependent parent and child nodes
+    std::vector<std::vector<bool>> visited_act;
+    for (int i = 0; i < num_robots_; i++) {
+        visited_act.push_back(std::vector<bool>(act_graph_.num_activities(i), false));
+    }
+    act_graph_.bfs(cur_act, visited_act, true);
+    act_graph_.bfs(cur_act, visited_act, false);
+
+    std::vector<std::vector<bool>> visited;
+    for (int i = 0; i < num_robots_; i++) {
+        std::vector<bool> v(numNodes_[i], false);
+        visited.push_back(v);
+    }
+    visited[nj->robotId][nj->timeStep] = true;
+    bfs(nj, visited, true);
+
+    visited[ni->robotId][ni->timeStep] = true;
+    bfs(ni, visited, false);
+
+    if (shortcutSteps <= 2) {
+        // special case, check if the static node collides with any other independent nodes
+        
+        for (int j = 0; j < num_robots_; j++) {
+            if (j == ni->robotId) {
+                continue;
+            }
+            for (int act_id_j = 0; act_id_j < act_graph_.num_activities(j); act_id_j++) {
+
+                // updated attached / detached object
+                auto act_j = act_graph_.get(j, act_id_j);
+                for (auto obj : act_j->obj_attached) {
+                    std::cout << "attaching object " << obj->obj.name << " to robot " << j << " link " << obj->next_attach_link << std::endl;
+                    instance->moveObject(obj->obj);
+                    //instance->updateScene();
+                    instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
+                    //instance->updateScene();
+                }
+                for (auto obj : act_j->obj_detached) {
+                    std::cout << "detaching object " << obj->obj.name << " from robot " << j << std::endl;
+                    instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
+                    //instance->updateScene();
+                }
+                if (visited_act[j][act_id_j] == true) {
+                    continue;
+                }
+                auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
+                auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
+                while (act_j->type == Activity::Type::home && act_id_j < act_graph_.num_activities(j) - 1) {
+                    act_id_j ++;
+                    act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
+                    act_j = act_graph_.get(j, act_id_j);
+                }
+                std::shared_ptr<Node> node_j = act_j_start_node;
+                while (node_j != nullptr && node_j->timeStep <= act_j_end_node->timeStep) {
+                    if (visited[j][node_j->timeStep] == false) {
+                        if (instance->checkCollision({ni->pose, node_j->pose}, true) ||
+                            instance->checkCollision({nj->pose, node_j->pose}, true)) {
+                            shortcut.col_type = CollisionType::ROBOT; // collide with other robots
+                            shortcut.n_robot_col = node_j;
+                            return;
+                        }
+                    }
+                    node_j = node_j->Type1Next;
+                }
+            }
+        }
+        shortcut.col_type = CollisionType::NONE;
+        return;
+    }
+
+    for (int j = 0; j < num_robots_; j++) {
+        Eigen::MatrixXi col_matrix_j(shortcutSteps, numNodes_[j]);
+        col_matrix_j.setZero();
+        col_matrix.push_back(col_matrix_j);
+    }
+
+    auto t_bfs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tic).count();
+
+    // check robot-robot collision
+   
+    for (int j = 0; j < num_robots_; j++) {
+        if (j == ni->robotId) {
+            continue;
+        }
+        for (int act_id_j = 0; act_id_j < act_graph_.num_activities(j); act_id_j++) {
+            // updated attached / detached object
+            auto act_j = act_graph_.get(j, act_id_j);
+            for (auto obj : act_j->obj_attached) {
+                std::cout << "attaching object " << obj->obj.name << " to robot " << j << " link " << obj->next_attach_link << std::endl;
+                instance->moveObject(obj->obj);
+                //instance->updateScene();
+                instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
+                //instance->updateScene();
+            }
+            for (auto obj : act_j->obj_detached) {
+                std::cout << "detaching object " << obj->obj.name << " from robot " << j << std::endl;
+                instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
+                //instance->updateScene();
+            }
+            if (visited_act[j][act_id_j] == true) {
+                continue;
+            }
+            auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
+            auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
+
+            while (act_j->type == Activity::Type::home && act_id_j < act_graph_.num_activities(j) - 1) {
+                act_id_j ++;
+                act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
+                act_j = act_graph_.get(j, act_id_j);
+            }
+            for (int i = 1; i < shortcutSteps - 1; i++) {
+                RobotPose pose_i = shortcut.path[i - 1];
+                std::shared_ptr<Node> node_j = act_j_start_node;
+                while (node_j != nullptr && node_j->timeStep <= act_j_end_node->timeStep) {
+                    if (config_.ignore_far_collisions) {
+                        if (node_j->timeStep < ni->timeStep - config_.ignore_steps) {
+                            node_j = node_j->Type1Next;
+                            continue;
+                        }
+                        else if (node_j->timeStep > ni->timeStep + shortcutSteps + config_.ignore_steps) {
+                            break;
+                        }
+                    }
+                    if (visited[j][node_j->timeStep] == false) {
+                        
+                        col_matrix[j](i, node_j->timeStep) = instance->checkCollision({pose_i, node_j->pose}, true);
+                        if (col_matrix[j](i, node_j->timeStep)) {
+                            shortcut.n_robot_col = node_j;
+                            shortcut.col_type = CollisionType::ROBOT; // collide with other robots
+                            return;
+                        }
+                    }
+                    node_j = node_j->Type1Next;
+                }
+            }
+        }
+    }
+
+    shortcut.col_type = CollisionType::NONE;
+    return;
+}
+
 
 }

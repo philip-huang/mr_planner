@@ -10,6 +10,9 @@
     <arg name="async" default="false" />
     <arg name="load_tpg" default="false" />
     <arg name="load_adg" default="false" />
+    <arg name="shortcut_time" default="1.0" />
+    <arg name="tight_shortcut" default="false" />
+
 
     <!-- Start the robot state publisher, simulation, and controler -->
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
@@ -46,6 +49,8 @@
         <param name="async" value="$(arg async)" />
         <param name="load_tpg" value="$(arg load_tpg)" />
         <param name="load_adg" value="$(arg load_adg)" />
+        <param name="shortcut_time" value="$(arg shortcut_time)" />
+        <param name="tight_shortcut" value="$(arg tight_shortcut)" />
     </node>
     
     <node name="left_arm" pkg="mr_planner" type="yk_robot" output="screen">

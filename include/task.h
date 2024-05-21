@@ -26,8 +26,7 @@ public:
         ar & end_pose;
         ar & obj_detached;
         ar & obj_attached;
-        ar & enable_collision;
-        ar & disable_collision;
+        ar & collision_nodes;
     }
 
     enum Type {
@@ -72,8 +71,7 @@ public:
     RobotPose end_pose;
     std::vector<ObjPtr> obj_detached;
     std::vector<ObjPtr> obj_attached;
-    std::vector<SetCollisionNode> enable_collision;
-    std::vector<SetCollisionNode> disable_collision;
+    std::vector<SetCollisionNode> collision_nodes;
 };
 
 class ObjectNode {
@@ -148,6 +146,7 @@ public:
     bool saveGraphToFile(const std::string &filename) const;
 
     std::shared_ptr<Activity> get(int robot_id, int act_id);
+    std::shared_ptr<const Activity> get(int robot_id, int act_id) const;
     std::shared_ptr<Activity> get_last_act(int robot_id);
     std::shared_ptr<Activity> get_last_act(int robot_id, Activity::Type type);
     ObjPtr get_last_obj(const std::string &obj_name);
@@ -166,7 +165,7 @@ public:
 
     bool bfs(std::shared_ptr<Activity> act_i, std::vector<std::vector<bool>> &visited, bool forward) const;
 
-    bool obj_dependent(std::shared_ptr<Activity>, ObjPtr obj_node) const;
+    std::vector<ObjPtr> find_indep_obj(std::shared_ptr<Activity> act) const;
 
 private:
     int num_robots_ = 0;

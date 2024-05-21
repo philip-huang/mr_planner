@@ -5,7 +5,9 @@ MoveitInstance::MoveitInstance(robot_state::RobotStatePtr kinematic_state,
                                const std::string &joint_group_name,
                                planning_scene::PlanningScenePtr planning_scene)
     : kinematic_state_(kinematic_state), joint_group_name_(joint_group_name), planning_scene_(planning_scene)
-{}
+{
+    planning_scene_->getPlanningSceneMsg(original_scene_);
+}
 
 void PlanInstance::setNumberOfRobots(int num_robots) {
     num_robots_ = num_robots;
@@ -88,7 +90,8 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
                 acm.setEntry(link, true);
             }
             // insert the joint values for this robot
-            all_joints.insert(all_joints.end(), start_poses_[i].joint_values.begin(), start_poses_[i].joint_values.end());
+            std::vector<double> dummy_values(getRobotDOF(i), 0.0);
+            all_joints.insert(all_joints.end(), dummy_values.begin(), dummy_values.end());
         }
         else {
             auto links = kinematic_state_->getJointModelGroup(group)->getLinkModelNamesWithCollisionGeometry();
@@ -308,6 +311,11 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
 }
 
 void MoveitInstance::moveObject(const Object& obj) {
+    if (objects_.find(obj.name) == objects_.end()) {
+        addMoveableObject(obj);
+        return;
+    }
+
     moveit_msgs::CollisionObject co;
     co.header.frame_id = obj.parent_link;
     co.header.stamp = ros::Time::now();
@@ -351,7 +359,7 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
     co.link_name = obj.parent_link;
     co.object.header.frame_id = obj.parent_link;
     co.object.header.stamp = ros::Time::now();
-    co.object.id = obj.name;
+    co.object.id = name;
     co.object.operation = co.object.ADD;
 
     // geometry_msgs::Pose relative_pose;
@@ -377,19 +385,19 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
 
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;
-    if (old_parent_link == "world") {
-        // moveit_msgs::CollisionObject co_remove;
-        // co_remove.id = obj.name;
-        // co_remove.header.frame_id = old_parent_link;
-        // co_remove.operation = co_remove.REMOVE;
-        // planning_scene.world.collision_objects.push_back(co_remove);
-    } else {
-        moveit_msgs::AttachedCollisionObject co_remove;
-        co_remove.object.id = obj.name;
-        co_remove.link_name = old_parent_link;
-        co_remove.object.operation = co_remove.object.REMOVE;
-        planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
-    }
+    // if (old_parent_link == "world") {
+    //     moveit_msgs::CollisionObject co_remove;
+    //     co_remove.id = obj.name;
+    //     co_remove.header.frame_id = old_parent_link;
+    //     co_remove.operation = co_remove.REMOVE;
+    //     planning_scene.world.collision_objects.push_back(co_remove);
+    // } else {
+    //     moveit_msgs::AttachedCollisionObject co_remove;
+    //     co_remove.object.id = obj.name;
+    //     co_remove.link_name = old_parent_link;
+    //     co_remove.object.operation = co_remove.object.REMOVE;
+    //     planning_scene.robot_state.attached_collision_objects.push_back(co_remove);
+    // }
     planning_scene.robot_state.attached_collision_objects.push_back(co);
     planning_scene.robot_state.is_diff = true;
     
@@ -413,7 +421,7 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotP
     obj.parent_link = "world";
 
     moveit_msgs::AttachedCollisionObject co_remove;
-    co_remove.object.id = obj.name;
+    co_remove.object.id = name;
     co_remove.link_name = old_parent_link;
     co_remove.object.operation = co_remove.object.REMOVE;
 
@@ -463,6 +471,16 @@ void MoveitInstance::updateScene() {
     moveit_msgs::ApplyPlanningScene srv;
     srv.request.scene = planning_scene_diff_;
     planning_scene_diff_client_.call(srv);
+}
+
+void MoveitInstance::resetScene(bool reset_sim) {
+    planning_scene_->setPlanningSceneMsg(original_scene_);
+    if (reset_sim) {
+        moveit_msgs::ApplyPlanningScene srv;
+        srv.request.scene = original_scene_;
+        planning_scene_diff_client_.call(srv);
+    }
+    objects_.clear();
 }
 
 bool MoveitInstance::setCollision(const std::string& obj_name, const std::string& link_name, bool allow) {

@@ -78,15 +78,17 @@ void ActivityGraph::detach_obj(ObjPtr obj, std::shared_ptr<Activity> act) {
 /* enable or disable collision checking between the object_node and the robot at the onset of selected activity */
 void ActivityGraph::set_collision(const std::string &obj_name, const std::string &name, std::shared_ptr<Activity> act, bool allow) {
     SetCollisionNode node(obj_name, name, allow);
-    if (allow) {
-        act->disable_collision.push_back(node);
-    }
-    else {
-        act->enable_collision.push_back(node);
-    }
+    act->collision_nodes.push_back(node);
 }
 
 std::shared_ptr<Activity> ActivityGraph::get(int robot_id, int act_id) {
+    if (robot_id >= num_robots_ || act_id >= activities_[robot_id].size()) {
+        return nullptr;
+    }
+    return activities_[robot_id][act_id];
+}
+
+std::shared_ptr<const Activity> ActivityGraph::get(int robot_id, int act_id) const {
     if (robot_id >= num_robots_ || act_id >= activities_[robot_id].size()) {
         return nullptr;
     }
@@ -223,47 +225,42 @@ bool ActivityGraph::bfs(std::shared_ptr<Activity> act_i, std::vector<std::vector
     return true;
 }
 
-bool ActivityGraph::obj_dependent(std::shared_ptr<Activity> act, ObjPtr obj_node) const {
-    if (obj_node->prev_detach == nullptr && obj_node->next_attach == nullptr) {
-        return false;
-    }
+std::vector<ObjPtr> ActivityGraph::find_indep_obj(std::shared_ptr<Activity> act) const {
+    std::vector<bool> dependent(obj_nodes_.size(), false);
 
     std::vector<std::vector<bool>> visited(num_robots_);
     for (int i = 0; i < num_robots_; i++) {
         visited[i].resize(activities_[i].size(), false);
     }
+    
+    // do forward bfs search and mark any dependnet object 
+    bfs(act, visited, true);
+    for (auto obj : obj_nodes_) {
+        if (obj->prev_detach != nullptr && visited[obj->prev_detach->robot_id][obj->prev_detach->act_id]) {
+            dependent[obj->obj_node_id] = true;
+        }
+    }
 
-    if (obj_node->prev_detach != nullptr) {
-        bfs(obj_node->prev_detach, visited, true);
-        if (visited[act->robot_id][act->act_id]) {
-            return true;
+    for (int i = 0; i < num_robots_; i++) {
+        visited[i].assign(activities_[i].size(), false);
+    }
+
+    // do backward bfs search and mark any dependnet object
+    bfs(act, visited, false);
+    for (auto obj : obj_nodes_) {
+        if (obj->next_attach != nullptr && visited[obj->next_attach->robot_id][obj->next_attach->act_id]) {
+            dependent[obj->obj_node_id] = true;
         }
     }
-    else if (obj_node->next_attach != nullptr) {
-        bfs(obj_node->next_attach, visited, false);
-        if (visited[act->robot_id][act->act_id]) {
-            return true;
+
+    std::vector<ObjPtr> indep_obj;
+    for (int i = 0; i < obj_nodes_.size(); i++) {
+        if (!dependent[i]) {
+            indep_obj.push_back(obj_nodes_[i]);
         }
     }
-    if (obj_node->prev_detach != nullptr) {
-        if (obj_node->prev_detach->type1_prev != nullptr) {
-            return true;
-        }
-        for (auto dep : obj_node->prev_detach->type2_prev) {
-            if (dep->type1_prev != nullptr) {
-                return true;
-            }
-        }
-    }
-    else if (obj_node->next_attach != nullptr) {
-        if (obj_node->next_attach->type1_next != nullptr) {
-            return true;
-        }
-        for (auto dep : obj_node->next_attach->type2_next) {
-            if (dep->type1_next != nullptr) {
-                return true;
-            }
-        }
-    }
-    return false;
+        
+    return indep_obj;
+
 }
+

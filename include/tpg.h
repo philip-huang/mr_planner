@@ -2,6 +2,7 @@
 #define MR_PLANNER_EXECUTION_H
 
 #include <planner.h>
+#include <task.h>
 #include <queue>
 #include <stack>
 
@@ -34,7 +35,7 @@ namespace TPG {
     struct TPGConfig {
         bool shortcut = true;
         bool random_shortcut = true;
-        bool biased_sample = true;
+        bool biased_sample = false;
         bool forward_doubleloop = false;
         bool backward_doubleloop = false;
         bool forward_singleloop = true;
@@ -115,6 +116,7 @@ namespace TPG {
         std::weak_ptr<Node> nj;
         std::vector<RobotPose> path;
         std::weak_ptr<Node> n_robot_col;
+        std::shared_ptr<Activity> activity;
         CollisionType col_type = CollisionType::UNKNOWN;
 
         Shortcut() = default;
@@ -136,14 +138,15 @@ namespace TPG {
     class ShortcutSampler {
     public:
         ShortcutSampler(const TPGConfig &config);
-        void init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes);
+        virtual void init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes);
 
-        bool sample(Shortcut &shortcut);
-        void updateFailedShortcut(const Shortcut &shortcut);
+        virtual bool sample(Shortcut &shortcut);
+        virtual void updateFailedShortcut(const Shortcut &shortcut);
     
-    private:
-        bool sampleUniform(Shortcut &shortcut);
-        bool sampleBiased(Shortcut &shortcut);
+    protected:
+        virtual bool sampleUniform(Shortcut &shortcut);
+        virtual bool sampleBiased(Shortcut &shortcut);
+        virtual void resetFailedShortcuts();
 
         bool biased_ = false;
         int num_robots_ = 0;
@@ -230,14 +233,14 @@ namespace TPG {
         void updateCollisionCheckMatrix(int robot_i, int robot_j, const Eigen::MatrixXi &col_matrix);
         void transitiveReduction();
         void findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_limit);
-        void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
+        virtual void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         void findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end);
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);
         void findTightType2Edges(const std::vector<std::vector<int>> &earliest_t, const std::vector<std::vector<int>> &latest_t);
         void findFlowtimeMakespan(double &flowtime, double &makespan);
         void preCheckShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut,
             const std::vector<int> &earliest_t, const std::vector<int> &latest_t) const;
-        void checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut, std::vector<Eigen::MatrixXi> &col_matrix) const;
+        virtual void checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut, std::vector<Eigen::MatrixXi> &col_matrix) const;
         void switchShortcuts();
         void updateTPG(const Shortcut &shortcut, const std::vector<Eigen::MatrixXi> &col_matrix);
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
@@ -259,6 +262,7 @@ namespace TPG {
 
         std::vector<std::vector<double>> joint_states_;
         std::vector<std::unique_ptr<std::atomic_int>> executed_steps_;
+        std::unique_ptr<ShortcutSampler> shortcut_sampler_;
 
         // stats
         double pre_shortcut_flowtime_ = 0.0;

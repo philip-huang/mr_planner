@@ -144,6 +144,8 @@ public:
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void updateScene() = 0;
+    virtual void resetScene(bool reset_sim) = 0;
+    virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) { throw std::runtime_error("Not implemented");};
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
 
@@ -215,14 +217,16 @@ public:
         planning_scene_diff_client_ = client;
     }
     virtual void updateScene() override;
+    virtual void resetScene(bool reset_sim) override;
 
-    virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow);
+    virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) override;
 
 private:
     // moveit move_group and planning_scene_interface pointers
     std::string joint_group_name_;
     robot_state::RobotStatePtr kinematic_state_;
     planning_scene::PlanningScenePtr planning_scene_;
+    moveit_msgs::PlanningScene original_scene_;
 
     /* store the planning scene diff temporarily*/
     moveit_msgs::PlanningScene planning_scene_diff_;
