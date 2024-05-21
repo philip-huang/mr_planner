@@ -64,6 +64,27 @@ def eval_setting(ns, robot_name, load_tpg, t, tight, biased, random_shortcut, pl
         # Run another script
         run_script('count_stats.py', script_params)
 
+def eval_lego(ns, t, tight, biased, seed):
+    directory = f'/home/philip/catkin_ws/src/mr_planner/outputs/lego'
+    
+    if not os.path.exists(directory):
+        # If not, create the directory
+        os.makedirs(directory)
+        
+    params = {
+        'ns': ns,
+        'load_tpg': 'true',
+        'use_rviz': 'false',
+        'shortcut_time': str(t),
+        'tight_shortcut': 'true' if tight else 'false',
+        'seed': str(seed),
+        'biased_sample': 'true' if biased else 'false',
+        'progress_file': f"{directory}/progress_{seed}_{'tight' if tight else 'loose'}_{'biased' if biased else ''}.csv",
+    }
+
+    run_roslaunch('mr_planner', 'lego.launch', params)
+
+    time.sleep(2)
 
 # run the evaluations in parallel
 def add_planner_processes(envs, id = 0):
@@ -134,6 +155,19 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
                 time.sleep(1)
     return processes, id
 
+def add_lego_processes(seeds, id=0):
+    processes = []
+    tight = True
+    biased = False
+    for seed in seeds:
+        ns = f'run_{id}'
+        id += 1
+        p = mp.Process(target=eval_lego, args=("/", 3.0, tight, biased, seed))
+        p.start()
+        processes.append(p)
+        time.sleep(1)
+        p.join()
+    return processes, id
 
 if __name__ == "__main__":
     envs = ["dual_gp4"]
@@ -142,12 +176,17 @@ if __name__ == "__main__":
     # for p in processes:
     #     p.join()
 
-    shortcut_ts = [0.2, 0.5, 1.0, 2.0]
+    #shortcut_ts = [0.2, 0.5, 1.0, 2.0]
     #shortcut_ts = [0.01, 0.02, 0.05, 0.1]
-    processes, id = add_tpg_processes(envs, shortcut_ts)
-    for p in processes:
-       p.join()
+    # processes, id = add_tpg_processes(envs, shortcut_ts)
+    # for p in processes:
+    #    p.join()
 
     # processes, id = add_baseline_processes(envs, shortcut_ts)
+    # for p in processes:
+    #     p.join()
+
+    seeds = [0]
+    processes, id = add_lego_processes(seeds)
     # for p in processes:
     #     p.join()

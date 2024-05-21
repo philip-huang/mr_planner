@@ -127,7 +127,7 @@ bool ShortcutSamplerADG::sampleUniform(Shortcut &shortcut) {
 
     log("Sampled shortcut from robot " + std::to_string(i) + " activity " + shortcut.activity->type_string() + 
         " timestep " + std::to_string(shortcut.ni.lock()->timeStep) +
-        " to timestep " + std::to_string(shortcut.nj.lock()->timeStep), LogLevel::INFO);
+        " to timestep " + std::to_string(shortcut.nj.lock()->timeStep), LogLevel::DEBUG);
     
     return true;
 }
@@ -302,6 +302,9 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     shortcut_sampler_ = std::make_unique<ShortcutSamplerADG>(config, act_graph_, intermediate_nodes_);
 
     transitiveReduction();
+
+    findFlowtimeMakespan(pre_shortcut_flowtime_, pre_shortcut_makespan_);
+
     if (hasCycle()) {
         log("Naive TPG already has cycle", LogLevel::ERROR);
         return false;
@@ -397,26 +400,21 @@ void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &short
     instance->resetScene(true);
     // add all static objects that needs to be collision checked
     std::vector<ObjPtr> indep_objs = act_graph_.find_indep_obj(cur_act);
-    std::cout << "adding independent objects ";
     for (auto obj : indep_objs) {
-        std::cout << obj->obj.name << " ";
         instance->addMoveableObject(obj->obj);
-        instance->updateScene();
+        //instance->updateScene();
     }
-    std::cout << std::endl;
 
     for (int act_id = 0; act_id <= cur_act->act_id; act_id++) {
         // updated attached / detached object
         std::shared_ptr<const Activity> act_j = act_graph_.get(robot_id, act_id);
         for (auto obj : act_j->obj_attached) {
-            std::cout << "attaching object " << obj->obj.name << " to robot " << robot_id << " link " << obj->next_attach_link << std::endl;
             instance->moveObject(obj->obj);
             //instance->updateScene();
             instance->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act_j->start_pose);
             //instance->updateScene();
         }
         for (auto obj : act_j->obj_detached) {
-            std::cout << "detaching object " << obj->obj.name << " from robot " << robot_id << std::endl;
             instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
             //instance->updateScene();
         }
@@ -470,14 +468,12 @@ void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &short
                 // updated attached / detached object
                 auto act_j = act_graph_.get(j, act_id_j);
                 for (auto obj : act_j->obj_attached) {
-                    std::cout << "attaching object " << obj->obj.name << " to robot " << j << " link " << obj->next_attach_link << std::endl;
                     instance->moveObject(obj->obj);
                     //instance->updateScene();
                     instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
                     //instance->updateScene();
                 }
                 for (auto obj : act_j->obj_detached) {
-                    std::cout << "detaching object " << obj->obj.name << " from robot " << j << std::endl;
                     instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
                     //instance->updateScene();
                 }
@@ -527,14 +523,12 @@ void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &short
             // updated attached / detached object
             auto act_j = act_graph_.get(j, act_id_j);
             for (auto obj : act_j->obj_attached) {
-                std::cout << "attaching object " << obj->obj.name << " to robot " << j << " link " << obj->next_attach_link << std::endl;
                 instance->moveObject(obj->obj);
                 //instance->updateScene();
                 instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
                 //instance->updateScene();
             }
             for (auto obj : act_j->obj_detached) {
-                std::cout << "detaching object " << obj->obj.name << " from robot " << j << std::endl;
                 instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
                 //instance->updateScene();
             }

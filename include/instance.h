@@ -12,6 +12,9 @@
 #include <moveit_msgs/PlanningScene.h>
 #include <moveit_msgs/AttachedCollisionObject.h>
 #include <moveit_msgs/ApplyPlanningScene.h>
+#include <moveit/collision_detection_bullet/collision_env_bullet.h>
+#include <moveit/collision_detection_fcl/collision_detector_allocator_fcl.h>
+#include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
 
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/serialization.hpp>
@@ -134,8 +137,8 @@ public:
     virtual void setGoalPose(int robot_id, const std::vector<double>& pose);
     virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const = 0;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const = 0;
-    virtual bool connect(const RobotPose& a, const RobotPose& b) = 0;
-    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result) = 0;
+    virtual bool connect(const RobotPose& a, const RobotPose& b, double col_step_size = 0.1) = 0;
+    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result, double col_step_size = 0.1) = 0;
     virtual bool sample(RobotPose &pose) = 0;
     virtual double getVMax(int robot_id);
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
@@ -201,8 +204,8 @@ public:
                    planning_scene::PlanningScenePtr planning_scene);
     virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const override;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
-    virtual bool connect(const RobotPose& a, const RobotPose& b) override;
-    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result) override;
+    virtual bool connect(const RobotPose& a, const RobotPose& b, double col_step_size = 0.1) override;
+    virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result, double col_step_size = 0.1) override;
     virtual bool sample(RobotPose &pose) override;
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const override;
     // Implementation of abstract methods using MoveIt functionalities

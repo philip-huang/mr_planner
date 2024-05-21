@@ -179,9 +179,9 @@ bool ActivityGraph::saveGraphToFile(const std::string &filename) const {
     out.close();
 
     std::string command = "dot -Tpng " + filename + " -o " + filename + ".png";
-    system(command.c_str());
+    int result = system(command.c_str());
 
-    return true;
+    return result == 0;
 
 }
 

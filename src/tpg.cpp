@@ -5,6 +5,7 @@ namespace TPG {
 
 ShortcutSampler::ShortcutSampler(const TPGConfig &config) {
     biased_ = config.biased_sample; 
+    std::srand(config.seed);
 }
 
 void ShortcutSampler::init(const std::vector<std::shared_ptr<Node>> &start_nodes, const std::vector<int> &numNodes) {
@@ -581,6 +582,12 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
     shortcut_sampler_->init(start_nodes_, numNodes_);
 
+    if (config_.progress_file != "") {
+        std::ofstream ofs(config_.progress_file, std::ofstream::out);
+        ofs << "start_pose,goal_pose,flowtime_pre,makespan_pre,flowtime_post,makespan_post,t_init,t_shortcut,t_mcp,t_check,n_check,n_valid" << std::endl;
+        ofs.close();
+    }
+
     auto tic = std::chrono::high_resolution_clock::now();
 
     while (elapsed < runtime_limit) {
@@ -629,6 +636,18 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
                     findTightType2Edges(earliest_t, latest_t);
                 }
                 num_valid_shortcuts_++;
+                if (config_.progress_file != "") {
+                    int flowspan_i = 0;
+                    int makespan_i = 0;
+                    for (int ri = 0; ri < num_robots_; ri++) {
+                        flowspan_i += reached_end[ri];
+                        makespan_i = std::max(makespan_i, reached_end[ri]);
+                    }
+
+                    post_shortcut_flowtime_ = flowspan_i * dt_;
+                    post_shortcut_makespan_ = makespan_i * dt_;
+                    saveStats(config_.progress_file);
+                }
             }
         }
         if (shortcut.col_type != CollisionType::NONE) {
@@ -637,6 +656,10 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
 
         auto toc = std::chrono::high_resolution_clock::now();
         elapsed = std::chrono::duration_cast<std::chrono::microseconds>(toc - tic).count() * 1e-6;
+    }
+    if (config_.progress_file != "") {
+        findFlowtimeMakespan(post_shortcut_flowtime_, post_shortcut_makespan_);
+        saveStats(config_.progress_file);
     }
 
     assert(hasCycle() == false);
@@ -656,7 +679,7 @@ void TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &sh
 
     if (shortcutSteps > (nj->timeStep - ni->timeStep)) {
         shortcut.col_type = CollisionType::NO_NEED; // no need for shortcut
-        log("Shortcut is not needed", LogLevel::INFO);
+        log("Shortcut is not needed", LogLevel::DEBUG);
         return;
     }
 
@@ -714,7 +737,7 @@ void TPG::preCheckShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &sh
         
         if (!has_tight_type2_edge && !all_tight_type1_edge) {
             shortcut.col_type = CollisionType::UNTIGHT;
-            log("Shortcut is untight", LogLevel::INFO);
+            log("Shortcut is untight", LogLevel::DEBUG);
             return;
         }
     }
@@ -1405,9 +1428,9 @@ bool TPG::saveToDotFile(const std::string& filename) const {
     out.close();
 
     std::string command = "dot -Tpng " + filename + " -o " + filename + ".png";
-    system(command.c_str());
+    int result = system(command.c_str());
 
-    return true;
+    return result == 0;
 }
 
 bool TPG::moveit_execute(std::shared_ptr<MoveitInstance> instance, 

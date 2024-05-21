@@ -141,13 +141,13 @@ RobotPose MoveitInstance::interpolate(const RobotPose &a, const RobotPose&b, dou
     return res;
 }
 
-bool MoveitInstance::connect(const RobotPose& a, const RobotPose& b) {
+bool MoveitInstance::connect(const RobotPose& a, const RobotPose& b, double col_step_size) {
     /* check if a collision-free kinematic path exists from pose a to b for the robot (ignoring other robots)*/
     assert(a.robot_id == b.robot_id && a.robot_name == b.robot_name);
     
     // discretize and check for collision along the path
     double joint_distance = computeDistance(a, b);
-    int num_steps = std::ceil(joint_distance / 0.1);
+    int num_steps = std::ceil(joint_distance / col_step_size);
 
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
@@ -184,7 +184,7 @@ bool MoveitInstance::connect(const RobotPose& a, const RobotPose& b) {
     return true;
 }
 
-bool MoveitInstance::steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result) {
+bool MoveitInstance::steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result, double col_step_size) {
     /* find a collision-free that steers the robot from a towards b for max_distance */
     assert(a.robot_id == b.robot_id && a.robot_name == b.robot_name);
     
@@ -207,7 +207,7 @@ bool MoveitInstance::steer(const RobotPose& a, const RobotPose& b, double max_di
     result.joint_values.resize(a.joint_values.size());
     robot_state.copyJointGroupPositions(a.robot_name, result.joint_values);
 
-    if (connect(a, result)) {
+    if (connect(a, result, col_step_size)) {
         return true;
     }
     else {

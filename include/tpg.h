@@ -47,6 +47,8 @@ namespace TPG {
         double dt = 0.1;
         double switch_shortcut = false;
         int ignore_steps = 5;
+        std::string progress_file;
+        int seed = 1;
     };
     
     struct type2Edge;
@@ -158,6 +160,7 @@ namespace TPG {
         std::vector<Shortcut> untight_shortcuts_;
         std::vector<std::vector<double>> sample_prob_;
         double scale_ = 15.0;
+
     };
 
     class TPG {
@@ -199,7 +202,7 @@ namespace TPG {
         virtual bool actionlib_execute(const std::vector<std::string> &joint_names, TrajectoryClient &client);
         virtual bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
         virtual void update_joint_states(const std::vector<double> &joint_states, int robot_id);
-        virtual void saveStats(const std::string &filename, const std::string &start_pose, const std::string &goal_pose) const;
+        virtual void saveStats(const std::string &filename, const std::string &start_pose = "", const std::string &goal_pose = "") const;
         void getSolution(std::vector<RobotTrajectory> &solution) const {
             solution = solution_;
         }

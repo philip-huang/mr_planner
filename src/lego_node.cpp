@@ -6,8 +6,6 @@
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <moveit/robot_state/robot_state.h>
-#include <moveit/collision_detection_bullet/collision_env_bullet.h>
-#include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -100,7 +98,6 @@ public:
         // planning_scene_monitor_->requestPlanningSceneState();
         ros::Duration(0.3).sleep();
         planning_scene_ = std::make_shared<planning_scene::PlanningScene>(robot_model_);
-        // planning_scene_->setActiveCollisionDetector(collision_detection::CollisionDetectorAllocatorBullet::create(), true);
 
         planning_scene_diff_client = nh_.serviceClient<moveit_msgs::ApplyPlanningScene>("apply_planning_scene");
         planning_scene_diff_client.waitForExistence();
@@ -667,7 +664,6 @@ int main(int argc, char** argv) {
     bool mfi = false;
     bool load_tpg = false;
     bool load_adg = false;
-    bool benchmark = false;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
@@ -683,7 +679,6 @@ int main(int argc, char** argv) {
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
     nh.param<bool>("load_adg", load_adg, false);
-    nh.param<bool>("benchmark", benchmark, false);
 
     // Initialize the Dual Arm Planner
     setLogLevel(LogLevel::INFO);
@@ -691,6 +686,8 @@ int main(int argc, char** argv) {
     TPG::TPGConfig tpg_config;
     nh.param<double>("shortcut_time", tpg_config.shortcut_time, 0.1);
     nh.param<bool>("tight_shortcut", tpg_config.tight_shortcut, false);
+    nh.param<int>("seed", tpg_config.seed, 1);
+    nh.param<std::string>("progress_file", tpg_config.progress_file, "");
 
     DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
 
@@ -733,15 +730,9 @@ int main(int argc, char** argv) {
         auto adg = std::make_shared<TPG::ADG>();
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
-
-        if (benchmark) {
-            adg->optimize(planner.getInstance(), tpg_config);
-        }
-        else {
-            planner.set_tpg(adg);
-            planner.reset_joint_states_flag();
-            planner.execute(adg);
-        }
+        planner.set_tpg(adg);
+        planner.reset_joint_states_flag();
+        planner.execute(adg);
 
         ros::shutdown();
         return 0;
