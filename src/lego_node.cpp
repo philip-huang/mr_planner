@@ -794,13 +794,7 @@ int main(int argc, char** argv) {
 
         if (mode == 0) {
             act_graph.add_act(robot_id, Activity::Type::home);
-            if (sup_robot > -1) {
-                act_graph.add_act(sup_robot, Activity::Type::home);
-                planner.setCollision(last_brick_name, eof_links[sup_robot], false);
-                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::home), false);
-            } else {
-                act_graph.add_act(other_robot_id, Activity::Type::home);
-            }
+            act_graph.add_act(other_robot_id, Activity::Type::home);
         }
         if (mode == 1) {
             robot_id = planner.getRobot(task_idx);
@@ -889,7 +883,7 @@ int main(int argc, char** argv) {
         if (mode == 11) {
             act_graph.add_act(robot_id, Activity::Type::drop_twist_up);
             if (sup_robot > -1) {
-                act_graph.add_act(sup_robot, Activity::Type::support);
+                act_graph.add_act(sup_robot, Activity::Type::support_pre, act_graph.get_last_act(robot_id, Activity::Type::drop_twist));
             } else {
                 act_graph.add_act(other_robot_id, Activity::Type::home);
             }
@@ -897,7 +891,9 @@ int main(int argc, char** argv) {
         if (mode == 12) {
             act_graph.add_act(robot_id, Activity::Type::home);
             if (sup_robot > -1) {
-                act_graph.add_act(sup_robot, Activity::Type::support_pre, act_graph.get_last_act(robot_id, Activity::Type::drop_twist_up));
+                act_graph.add_act(sup_robot, Activity::Type::home);
+                planner.setCollision(last_brick_name, eof_links[sup_robot], false);
+                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::home), false);
             } else {
                 act_graph.add_act(other_robot_id, Activity::Type::home);
             }
@@ -925,7 +921,11 @@ int main(int argc, char** argv) {
         }
         else {
             planner.reset_joint_states_flag();
-            planner.planAndMove(poses, tpg_config);
+            bool success = planner.planAndMove(poses, tpg_config);
+            if (!success) {
+                ROS_ERROR("Failed to plan and move mode %d, task_id: %d, robot_id: %d, sup_robot_id: %d, brick_name: %s", mode, task_idx, robot_id, sup_robot, brick_name.c_str());
+                return -1;
+            }
         }
 
         std::shared_ptr<TPG::TPG> tpg = planner.copyCurrentTPG(); 

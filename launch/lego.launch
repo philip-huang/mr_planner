@@ -15,6 +15,9 @@
     <arg name="vmax" default="2.0" />
     <arg name="benchmark" default="false"/>
 
+    <!-- Workaround on wsl for opengl rendering issue -->
+    <env name="LIBGL_ALWAYS_SOFTWARE" value="1"/>
+
     <!-- Start the robot state publisher, simulation, and controler -->
     <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
     </include> -->
