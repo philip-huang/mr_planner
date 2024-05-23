@@ -80,6 +80,7 @@ public:
     void serialize(Archive & ar, const unsigned int version)
     {
         ar & obj;
+        ar & obj_node_id;
         ar & prev_detach;
         ar & next_attach;
         ar & next_attach_link;

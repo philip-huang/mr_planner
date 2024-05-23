@@ -22,7 +22,7 @@ def read_csv(base_dir, seed, algo):
     return df
 
 # Plot the data
-seeds = [1, 2, 3, 4]
+seeds = [0, 1, 2, 3, 4]
 
 entries = [#('b', 'o', 'iter_loose', 'Iterative'),
             #('r', 's', 'bwd_diter_loose', 'Backward Double'),
@@ -35,7 +35,7 @@ plt.figure(figsize=(8, 12))
 plt.rcParams.update({'font.size': 15})
 
 for color, marker, algo, label in entries:
-    base_dir = '/home/philip/catkin_ws/src/mr_planner/outputs/lego'
+    base_dir = '/home/philip/catkin_ws/src/mr_planner/outputs/lego/tower'
 
     data_frames = [read_csv(base_dir, seed, algo) for seed in seeds]
     all_data = pd.concat(data_frames)

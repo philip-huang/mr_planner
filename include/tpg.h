@@ -65,6 +65,7 @@ namespace TPG {
             ar & timeStep;
             ar & robotId;
             ar & nodeId;
+            ar & actId;
         }
 
         RobotPose pose; // < The pose of the robot at this Node
@@ -75,6 +76,7 @@ namespace TPG {
         int timeStep = -1;                       ///< The time step at which this Node exists
         int robotId = -1;                        ///< The ID of the robot at this Node
         int nodeId = -1;                         ///< The ID of the Node
+        int actId = -1;                          ///< The ID of the Activity, if any
         
         Node() = default;
         Node(int robot_id, int t)
@@ -94,6 +96,7 @@ namespace TPG {
             ar & switchable;
             ar & nodeFrom;
             ar & nodeTo;
+            ar & tight;
         }
 
         int edgeId = -1; ///< The ID of the edge
@@ -235,7 +238,8 @@ namespace TPG {
         void getCollisionCheckMatrix(int robot_i, int robot_j, Eigen::MatrixXi &col_matrix) const;
         void updateCollisionCheckMatrix(int robot_i, int robot_j, const Eigen::MatrixXi &col_matrix);
         void transitiveReduction();
-        void findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_limit);
+        virtual void initSampler();
+        virtual void findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         virtual void findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit);
         void findEarliestReachTime(std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end);
         void findLatestReachTime(std::vector<std::vector<int>> &reached_t, const std::vector<int> &reached_end);

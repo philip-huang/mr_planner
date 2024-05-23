@@ -44,7 +44,11 @@ RobotPose PlanInstance::initRobotPose(int robot_id) const {
 }
 
 double PlanInstance::getVMax(int robot_id) {
-    return 1.0;
+    return v_max_;
+}
+
+void PlanInstance::setVmax(double vmax) {
+    v_max_ = vmax;
 }
 
 bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {

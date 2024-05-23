@@ -64,8 +64,8 @@ def eval_setting(ns, robot_name, load_tpg, t, tight, biased, random_shortcut, pl
         # Run another script
         run_script('count_stats.py', script_params)
 
-def eval_lego(ns, t, tight, biased, seed):
-    directory = f'/home/philip/catkin_ws/src/mr_planner/outputs/lego'
+def eval_lego(ns, task, t, tight, biased, seed):
+    directory = f'/home/philip/catkin_ws/src/mr_planner/outputs/lego/{task}'
     
     if not os.path.exists(directory):
         # If not, create the directory
@@ -73,7 +73,10 @@ def eval_lego(ns, t, tight, biased, seed):
         
     params = {
         'ns': ns,
-        'load_tpg': 'true',
+        'task': task,
+        'load_tpg': 'false',
+        'load_adg': 'true',
+        'benchmark': 'true',
         'use_rviz': 'false',
         'shortcut_time': str(t),
         'tight_shortcut': 'true' if tight else 'false',
@@ -155,14 +158,14 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
                 time.sleep(1)
     return processes, id
 
-def add_lego_processes(seeds, id=0):
+def add_lego_processes(task, seeds, id=0):
     processes = []
     tight = True
     biased = False
     for seed in seeds:
         ns = f'run_{id}'
         id += 1
-        p = mp.Process(target=eval_lego, args=("/", 3.0, tight, biased, seed))
+        p = mp.Process(target=eval_lego, args=("/", task, 30.0, tight, biased, seed))
         p.start()
         processes.append(p)
         time.sleep(1)
@@ -186,7 +189,7 @@ if __name__ == "__main__":
     # for p in processes:
     #     p.join()
 
-    seeds = [0]
-    processes, id = add_lego_processes(seeds)
+    seeds = [1, 2, 3, 4]
+    processes, id = add_lego_processes('tower', seeds)
     # for p in processes:
     #     p.join()

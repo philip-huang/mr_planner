@@ -25,36 +25,6 @@ void ShortcutSamplerADG::init(const std::vector<std::shared_ptr<Node>> &start_no
 
     // save all the nodes, and activity ids, and activity lengths
 
-    // for (int i = 0; i < num_robots_; i++) {
-    //     std::vector<std::shared_ptr<Node>> nodes_i;
-    //     std::vector<int> act_ids_i;
-    //     for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
-    //         std::shared_ptr<Node> node = intermediate_nodes_[i][act_id * 2];
-    //         std::shared_ptr<Node> act_id_i_end = intermediate_nodes_[i][act_id * 2 + 1];
-    //         std::shared_ptr<Activity> act_i = act_graph_.get(i, act_id);
-    //         while (act_i->type == Activity::Type::home && act_id < act_graph_.num_activities(i) - 1) {
-    //             act_id ++;
-    //             act_i = act_graph_.get(i, act_id);
-    //             act_id_i_end = intermediate_nodes_[i][act_id * 2 + 1];
-    //             act_lengths_[i].push_back(0);
-    //         }
-    //         std::cout << "robot " << i << " nodes:  ";
-    //         int num_node_act_i = 0;
-    //         while (node != nullptr && node->timeStep <= act_id_i_end->timeStep) {
-    //             nodes_i.push_back(node);
-    //             act_ids_i.push_back(act_id);
-    //             std::cout << node->timeStep << " ";
-    //             node = node->Type1Next;
-    //             num_node_act_i++;
-    //         }
-    //         act_lengths_[i].push_back(num_node_act_i);
-    //         std::cout << std::endl;
-    //     }
-
-    //     nodes_[i] = nodes_i;
-    //     act_ids_[i] = act_ids_i;
-    // }
-
     for (int i = 0; i < num_robots_; i++) {
         auto node = start_nodes[i];
         int j = 0;
@@ -132,6 +102,11 @@ bool ShortcutSamplerADG::sampleUniform(Shortcut &shortcut) {
     return true;
 }
 
+void ADG::reset()
+{
+    TPG::reset();
+    intermediate_nodes_.clear();
+}
 
 bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig &config, const std::vector<std::shared_ptr<TPG>> &tpgs) {
     dt_ = config.dt;
@@ -154,8 +129,10 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
             std::shared_ptr<Node> iter_node = inter_start_node;
             while (iter_node != inter_end_node) {
                 iter_node->timeStep += numNodes_[i];
+                iter_node->actId = act_id;
                 iter_node = iter_node->Type1Next;
             }
+            inter_end_node->actId = act_id;
             inter_end_node->timeStep += numNodes_[i];
 
             if (act_id > 0) {
@@ -198,7 +175,7 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     // recompute the time step for each node
     std::vector<std::vector<int>> reached_t;
     std::vector<int> reached_end;
-    findEarliestReachTime(reached_t, reached_end);
+    findEarliestReachTimeSyncAct(tpgs.size(), reached_t, reached_end);
     // add collision dependencies type 2 edges
 
     // for each pair of activities between each pair of robot
@@ -209,7 +186,10 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     idType2Edges_ = 20000;
  
     for (int i = 0; i < num_robots_; i++) {
-        for (int j = i + 1; j < num_robots_; j++) {
+        for (int j = 0; j < num_robots_; j++) {
+            if (i == j) {
+                continue;
+            }
             for (int act_id_i = 0; act_id_i < act_graph_.num_activities(i); act_id_i++) {
                 auto act_i = act_graph_.get(i, act_id_i);
                 
@@ -247,7 +227,7 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                         instance->updateScene();
                     }
 
-                    if (act_id_i == act_id_j) {
+                    if (act_id_j == act_id_i) {
                         // skip if they are in the same tpg because type-2 dependencies would have already been build
                         continue;
                     }
@@ -261,7 +241,7 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                     auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
                     auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
                     
-                    if (reached_t[j][act_j_start_node->timeStep] <= reached_t[i][act_i_end_node->timeStep]) {
+                    if (reached_t[j][act_j_start_node->timeStep] < reached_t[i][act_i_end_node->timeStep]) {
                         // check collision
                         std::shared_ptr<Node> iter_node_i = act_i_start_node;
                         std::shared_ptr<Node> iter_node_j_start = act_j_start_node;
@@ -270,7 +250,7 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                             bool inCollision = false;
                             while (iter_node_j != nullptr &&
                                 iter_node_j->timeStep <= act_j_end_node->timeStep &&
-                                reached_t[j][iter_node_j->timeStep] <= reached_t[i][iter_node_i->timeStep]) 
+                                reached_t[j][iter_node_j->timeStep] < reached_t[i][iter_node_i->timeStep]) 
                             {
                                 bool has_collision = instance->checkCollision({iter_node_i->pose, iter_node_j->pose}, true);
                                 if (has_collision) {
@@ -285,11 +265,28 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                                     iter_node_j->Type2Next.push_back(edge);
                                     iter_node_i->Type2Prev.push_back(edge);
                                     iter_node_j_start = iter_node_j->Type1Next;
+                                    log("add type 2 edge from robot " + std::to_string(j) + " activity " 
+                                        + act_i->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)  +
+                                        " to robot " + std::to_string(i) + " activity " 
+                                        + act_j->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep), LogLevel::INFO);
 
-                                    // std::cout << "add type 2 edge from robot " << j << " timestep " << iter_node_j->timeStep
-                                    //     << " to robot " << i << " timestep " << iter_node_i->timeStep << std::endl;
                                 }
                                 iter_node_j = iter_node_j->Type1Next;
+                            }
+                            if (inCollision) {
+                                assert(iter_node_j != nullptr);
+                                type2Edge edge;
+                                edge.edgeId = idType2Edges_++;
+                                edge.nodeFrom = iter_node_j;
+                                edge.nodeTo = iter_node_i;
+                                iter_node_j->Type2Next.push_back(edge);
+                                iter_node_i->Type2Prev.push_back(edge);
+                                iter_node_j_start = iter_node_j;
+                                log("add type 2 edge from robot " + std::to_string(j) + " activity " 
+                                        + act_i->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)  +
+                                        " to robot " + std::to_string(i) + " activity " 
+                                        + act_j->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep), LogLevel::INFO);
+
                             }
                             iter_node_i = iter_node_i->Type1Next;
                         }
@@ -299,19 +296,148 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
         }
     }
     
-    shortcut_sampler_ = std::make_unique<ShortcutSamplerADG>(config, act_graph_, intermediate_nodes_);
-
     transitiveReduction();
-
-    findFlowtimeMakespan(pre_shortcut_flowtime_, pre_shortcut_makespan_);
 
     if (hasCycle()) {
         log("Naive TPG already has cycle", LogLevel::ERROR);
         return false;
     }
+
+    findFlowtimeMakespan(pre_shortcut_flowtime_, pre_shortcut_makespan_);
+
     log("ADG initialized", LogLevel::HLINFO);
     
     return true;
+}
+
+void ADG::findEarliestReachTimeSyncAct(int num_act, std::vector<std::vector<int>> &reached_t, std::vector<int> &reached_end)
+{
+    reached_t.clear();
+    reached_end.clear();
+    std::vector<std::shared_ptr<Node>> nodes;
+    nodes.resize(num_robots_);
+    reached_end.resize(num_robots_, -1);
+    
+    for (int i = 0; i < num_robots_; i++) {
+        std::vector<int> v(numNodes_[i], -1);
+        reached_t.push_back(v);
+    }
+
+    int flowtime_i = 0;
+    int j = 0;
+    for (int act_id = 0; act_id < num_act; act_id++) {
+        for (int i = 0; i < num_robots_; i++) {
+            nodes[i] = intermediate_nodes_[i][act_id * 2];
+            reached_end[i] = -1;
+        }
+
+        bool allReached = false;
+        while(!allReached) {
+            for (int i = 0; i < num_robots_; i++) {
+                if (reached_t[i][nodes[i]->timeStep] == -1) {
+                    reached_t[i][nodes[i]->timeStep] = j;
+                }
+            }
+            for (int i = 0; i < num_robots_; i++) {
+                if (nodes[i]->timeStep < intermediate_nodes_[i][act_id * 2 + 1]->timeStep) {
+                    bool safe = true;
+                    for (auto edge : nodes[i]->Type1Next->Type2Prev) {
+                        if (reached_t[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] == -1) {
+                            safe = false;
+                            break;
+                        }
+                    }
+                    if (safe) {
+                        nodes[i] = nodes[i]->Type1Next;
+                    }
+                }
+                else if (reached_end[i] == -1) {
+                    reached_end[i] = j;
+                    flowtime_i += j;
+                }
+            }
+
+            allReached = true;
+            for (int i = 0; i < num_robots_; i++) {
+                allReached &= (reached_end[i] != -1);
+            }
+            j++;
+        }
+    }
+ 
+
+}
+
+
+bool ADG::saveToDotFile(const std::string& filename) const {
+    std::ofstream out(filename);
+    out << "digraph G {" << std::endl;
+
+    // define node attributes here
+    out << "node [shape=ellipse];" << std::endl;
+    out << "rankdir=LR;" << std::endl;
+
+    // define all the nodes
+    for (int i = 0; i < num_robots_; i++) {
+        out << "subgraph cluster_" << i << " {" << std::endl;
+        out << "label = \"Robot " << i << "\";" << std::endl;
+        out << "rank=same;" << std::endl;
+        std::shared_ptr<Node> node_i = start_nodes_[i];
+        std::vector<std::shared_ptr<Node>> salient_nodes;
+        while (node_i != nullptr) {
+            if (node_i->Type1Prev == nullptr) {
+                out << "n" << i << "_" << node_i->timeStep << " [label=\"" << act_graph_.get(i, node_i->actId)->type_string() << node_i->timeStep << "\"];" << std::endl;
+                salient_nodes.push_back(node_i);
+            }
+            else if (node_i->Type1Next == nullptr) {
+                out << "n" << i << "_" << node_i->timeStep << " [label=\"" << act_graph_.get(i, node_i->actId)->type_string() << node_i->timeStep << "\"];" << std::endl;
+                salient_nodes.push_back(node_i);
+            }
+            else if (node_i->Type1Next->actId > node_i->actId &&
+                act_graph_.get(i, node_i->Type1Next->actId)->type != act_graph_.get(i, node_i->actId)->type) {
+                out << "n" << i << "_" << node_i->timeStep << " [label=\"" << act_graph_.get(i, node_i->actId)->type_string() << node_i->timeStep << "\"];" << std::endl;
+                salient_nodes.push_back(node_i);
+            }
+            else if (node_i->Type2Prev.size() > 0) {
+                out << "n" << i << "_" << node_i->timeStep << " [label=\"" << act_graph_.get(i, node_i->actId)->type_string() << node_i->timeStep << "\"];" << std::endl;
+                salient_nodes.push_back(node_i);
+            }
+            else if (node_i->Type2Next.size() > 0) {
+                out << "n" << i << "_" << node_i->timeStep << " [label=\"" << act_graph_.get(i, node_i->actId)->type_string() << node_i->timeStep << "\"];" << std::endl;
+                salient_nodes.push_back(node_i);
+            }
+            
+            node_i = node_i->Type1Next;
+        }
+        assert(salient_nodes.size() > 0);
+
+        node_i = salient_nodes[0];
+        out << "n" << i << "_" << node_i->timeStep;
+        for (int j = 1; j < salient_nodes.size(); j++) {
+            out << " -> " << "n" << i << "_" << salient_nodes[j]->timeStep;
+        }
+        out << ";" << std::endl;
+        out << "}" << std::endl;
+    }
+
+    // define all the edges
+    for (int i = 0; i < num_robots_; i++) {
+        std::shared_ptr<Node> node_i = start_nodes_[i];
+        while (node_i != nullptr) {
+            for (auto edge : node_i->Type2Prev) {
+                out << "n" << edge.nodeFrom->robotId << "_" << edge.nodeFrom->timeStep << " -> " << "n" << i << "_" << node_i->timeStep << ";" << std::endl;
+            }
+            node_i = node_i->Type1Next;
+        }
+    }
+
+    out << "}" << std::endl;
+    out.close();
+
+    std::string command = "dot -Tpng " + filename + " -o " + filename + ".png";
+    int result = system(command.c_str());
+
+    return result == 0;
 }
 
 void ADG::update_joint_states(const std::vector<double> &joint_states, int robot_id)
@@ -374,6 +500,11 @@ bool ADG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_n
         executed_acts_.push_back(std::make_unique<std::atomic<int>>(0));
     }
     return TPG::moveit_mt_execute(joint_names, clients);
+}
+
+void ADG::initSampler() {
+    shortcut_sampler_ = std::make_unique<ShortcutSamplerADG>(config_, act_graph_, intermediate_nodes_);
+    shortcut_sampler_->init(start_nodes_, numNodes_);
 }
 
 void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &shortcut,

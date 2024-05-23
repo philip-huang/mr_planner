@@ -81,7 +81,7 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Goa
 class DualArmPlanner {
 public:
     DualArmPlanner(const std::string &planner_type, const std::string &output_dir,
-                const std::vector<std::string> &group_names, bool async, bool mfi) : 
+                const std::vector<std::string> &group_names, bool async, bool mfi, double vmax) : 
         planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), async_(async), mfi_(mfi) {
         robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
         robot_model_ = robot_model_loader.getModel();
@@ -107,6 +107,7 @@ public:
         instance_->setRobotNames({"left_arm", "right_arm"});
         instance_->setRobotDOF(0, 7);
         instance_->setRobotDOF(1, 7);
+        instance_->setVmax(vmax);
         instance_->setPlanningSceneDiffClient(planning_scene_diff_client);
         pp_planner_ = std::make_shared<PriorityPlanner>(instance_);
 
@@ -197,6 +198,11 @@ public:
         joint_names_split_.clear();
         left_arm_joint_state_received = false;
         right_arm_joint_state_received = false;
+
+        // create a directory for saving TPGs if it does not exist
+        if (!boost::filesystem::exists(output_dir_)) {
+            boost::filesystem::create_directories(output_dir_);
+        }
 
         if (mfi_) {
             std::vector<std::string> names;
@@ -443,10 +449,8 @@ public:
 
         std::vector<std::string> brick_names = lego_ptr_->get_brick_names();
         addMoveitCollisionObject("table");
-        setCollision("table", "left_arm_link_tool", false);
         for (const auto & name : brick_names) {
             addMoveitCollisionObject(name);
-            setCollision(name, "left_arm_link_tool", false);
         }
 
         return true;
@@ -482,6 +486,17 @@ public:
         auto cur_graph_node = task_json_[std::to_string(task_idx)];
         brick_name = lego_ptr_->get_brick_name_by_id(cur_graph_node["brick_id"].asInt(), cur_graph_node["brick_seq"].asInt());
     }
+
+    int getRobot(int task_idx) {
+        auto cur_graph_node = task_json_[std::to_string(task_idx)];
+        return cur_graph_node["robot_id"].asInt() - 1;
+    }
+
+    int getSupportRobot(int task_idx) {
+        auto cur_graph_node = task_json_[std::to_string(task_idx)];
+        return cur_graph_node["sup_robot_id"].asInt() - 1;
+    }
+
 
     Object getLegoStart(const std::string &brick_name) {
         Object obj;
@@ -664,12 +679,16 @@ int main(int argc, char** argv) {
     bool mfi = false;
     bool load_tpg = false;
     bool load_adg = false;
+    bool benchmark = false;
+    double vmax = 1.0;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
             nh.getParam("group_name_" + std::to_string(i), group_names[i]);
        }
     }
+    std::vector<std::string> eof_links = {"left_arm_link_tool", "right_arm_link_tool"};
+
     nh.getParam("fullorder_targets_filename", file_path);
     nh.getParam("planner_type", planner_type);
     nh.param<std::string>("config_fname", config_fname, "");
@@ -679,6 +698,7 @@ int main(int argc, char** argv) {
     nh.param<bool>("mfi", mfi, false);
     nh.param<bool>("load_tpg", load_tpg, false);
     nh.param<bool>("load_adg", load_adg, false);
+    nh.param<bool>("benchmark", benchmark, false);
 
     // Initialize the Dual Arm Planner
     setLogLevel(LogLevel::INFO);
@@ -688,8 +708,11 @@ int main(int argc, char** argv) {
     nh.param<bool>("tight_shortcut", tpg_config.tight_shortcut, false);
     nh.param<int>("seed", tpg_config.seed, 1);
     nh.param<std::string>("progress_file", tpg_config.progress_file, "");
+    nh.param<double>("vmax", vmax, 1.0);
+    tpg_config.dt = 0.1 / vmax;
+    ROS_INFO("TPG Config: vmax: %f, dt: %f, shortcut_time: %f, tight_shortcut: %d", vmax, tpg_config.dt, tpg_config.shortcut_time, tpg_config.tight_shortcut);
 
-    DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi);
+    DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi, vmax);
 
     // wait 2 seconds
     ros::Duration(2).sleep();
@@ -730,9 +753,15 @@ int main(int argc, char** argv) {
         auto adg = std::make_shared<TPG::ADG>();
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
-        planner.set_tpg(adg);
-        planner.reset_joint_states_flag();
-        planner.execute(adg);
+
+        if (benchmark) {
+            adg->optimize(planner.getInstance(), tpg_config);
+        }
+        else {
+            planner.set_tpg(adg);
+            planner.reset_joint_states_flag();
+            planner.execute(adg);
+        }
 
         ros::shutdown();
         return 0;
@@ -744,122 +773,136 @@ int main(int argc, char** argv) {
     int task_idx = 1;
     std::string brick_name;
     std::string last_brick_name = "b2_5"; // TODO: fix this hardcoding
-    bool use_robot2 = false;
+    int robot_id = -1;
+    int other_robot_id = -1;
+    int sup_robot = -1;
+
     for (int i = 0; i < all_poses.size(); i++) {
         std::vector<GoalPose> poses = all_poses[i];
         // set the activity's start and goal pose
+        std::vector<RobotPose> start_poses;
         RobotPose pose0 = planner.getInstance()->initRobotPose(0);
         pose0.joint_values = (i==0) ? init_pose[0].joint_values : all_poses[i-1][0].joint_values;
+        start_poses.push_back(pose0);
         
         RobotPose pose1 = planner.getInstance()->initRobotPose(1);
         pose1.joint_values = (i==0) ? init_pose[1].joint_values : all_poses[i-1][1].joint_values;
+        start_poses.push_back(pose1);
         
+        
+        planner.getLegoBrickName(task_idx, brick_name);
 
         if (mode == 0) {
-            act_graph.add_act(0, Activity::Type::home);
-            act_graph.add_act(1, Activity::Type::home);
+            act_graph.add_act(robot_id, Activity::Type::home);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::home);
+                planner.setCollision(last_brick_name, eof_links[sup_robot], false);
+                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::home), false);
+            } else {
+                act_graph.add_act(other_robot_id, Activity::Type::home);
+            }
         }
         if (mode == 1) {
-            planner.getLegoBrickName(task_idx, brick_name);
+            robot_id = planner.getRobot(task_idx);
+            other_robot_id = (robot_id == 0) ? 1 : 0;
+            sup_robot = planner.getSupportRobot(task_idx);
+            
             Object obj = planner.getLegoStart(brick_name);
             ObjPtr obj_node = act_graph.add_obj(obj);
             
-            act_graph.add_act(0, Activity::Type::pick_tilt_up);
-            act_graph.add_act(1, Activity::Type::home);
+            act_graph.add_act(robot_id, Activity::Type::pick_tilt_up);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
             
-            planner.setCollision(brick_name, "left_arm_link_tool", true);
-            act_graph.set_collision(brick_name, "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_tilt_up), true);
+            planner.setCollision(brick_name, eof_links[robot_id], true);
+            act_graph.set_collision(brick_name, eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_tilt_up), true);
         }
         if (mode == 2) {
-            act_graph.add_act(0, Activity::Type::pick_up);
-            act_graph.add_act(1, Activity::Type::home);
+            act_graph.add_act(robot_id, Activity::Type::pick_up);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
         }
         if (mode == 3) {
-            act_graph.add_act(0, Activity::Type::pick_down);
-            act_graph.add_act(1, Activity::Type::home);
+            act_graph.add_act(robot_id, Activity::Type::pick_down);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
         }
         if (mode == 4) {
-            ROS_INFO("attach lego to robot 0");
-            act_graph.add_act(0, Activity::Type::pick_twist);
-            act_graph.add_act(1, Activity::Type::home);
-            planner.attachMoveitCollisionObject(brick_name, 0, "left_arm_link_tool", pose0);
-            act_graph.attach_obj(act_graph.get_last_obj(brick_name), "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist));
-            planner.setCollision("table", "left_arm_link_tool", true);
-            act_graph.set_collision("table", "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist), true);
+            ROS_INFO("attach lego to robot %d", robot_id);
+            act_graph.add_act(robot_id, Activity::Type::pick_twist);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
+            planner.attachMoveitCollisionObject(brick_name, robot_id, eof_links[robot_id], start_poses[robot_id]);
+            act_graph.attach_obj(act_graph.get_last_obj(brick_name), eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist));
+            planner.setCollision("table", eof_links[robot_id], true);
+            act_graph.set_collision("table", eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist), true);
         }
         if (mode == 5) {
-            act_graph.add_act(0, Activity::Type::pick_twist_up);
-            act_graph.add_act(1, Activity::Type::home);
+            act_graph.add_act(robot_id, Activity::Type::pick_twist_up);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
         }
         if (mode == 6) {
-            act_graph.add_act(0, Activity::Type::home);
-            act_graph.add_act(1, Activity::Type::home);
-            planner.setCollision("table", "left_arm_link_tool", false);
-            act_graph.set_collision("table", "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::pick_twist), false);
+            act_graph.add_act(robot_id, Activity::Type::home);
+            act_graph.add_act(other_robot_id, Activity::Type::home);
+            planner.setCollision("table", eof_links[robot_id], false);
+            act_graph.set_collision("table", eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::home), false);
         }
         if (mode == 7) {
-            act_graph.add_act(0, Activity::Type::drop_tilt_up);
-            if (poses[1].use_robot) {
-                use_robot2 = true;
-                act_graph.add_act(1, Activity::Type::support_pre);
+            act_graph.add_act(robot_id, Activity::Type::drop_tilt_up);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::support_pre);
             } else {
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
         }
         if (mode == 8) {
-            act_graph.add_act(0, Activity::Type::drop_up);
-            if (use_robot2) {
-                act_graph.add_act(1, Activity::Type::support);
-                planner.setCollision(last_brick_name, "right_arm_link_tool", true);
-                act_graph.set_collision(last_brick_name, "right_arm_link_tool", act_graph.get_last_act(1, Activity::Type::support), true);
+            act_graph.add_act(robot_id, Activity::Type::drop_up);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::support);
+                planner.setCollision(last_brick_name, eof_links[sup_robot], true);
+                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::support), true);
             } else {
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
         }
         if (mode == 9) {
-            if (use_robot2) {
-                act_graph.add_act(0, Activity::Type::drop_down, act_graph.get_last_act(1, Activity::Type::support));
-                act_graph.add_act(1, Activity::Type::support);
+            if (sup_robot > -1) {
+                act_graph.add_act(robot_id, Activity::Type::drop_down, act_graph.get_last_act(sup_robot, Activity::Type::support));
+                act_graph.add_act(sup_robot, Activity::Type::support);
             } else {
-                act_graph.add_act(0, Activity::Type::drop_down);
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(robot_id, Activity::Type::drop_down);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
             planner.setCollision(last_brick_name, brick_name, true);
-            act_graph.set_collision(last_brick_name, brick_name, act_graph.get_last_act(0, Activity::Type::drop_down), true);
+            act_graph.set_collision(last_brick_name, brick_name, act_graph.get_last_act(robot_id, Activity::Type::drop_down), true);
             last_brick_name = brick_name;
         }
         if (mode == 10) {
-            ROS_INFO("detach lego from robot 0");
+            ROS_INFO("detach lego from robot %d", robot_id);
             Object obj = planner.getLegoTarget(task_idx);
             act_graph.add_obj(obj);
-            act_graph.add_act(0, Activity::Type::drop_twist);
-            if (use_robot2) {
-                act_graph.add_act(1, Activity::Type::support);
+            act_graph.add_act(robot_id, Activity::Type::drop_twist);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::support);
             } else {
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
-            planner.detachMoveitCollisionObject(brick_name, pose0);
-            act_graph.detach_obj(act_graph.get_last_obj(brick_name), act_graph.get_last_act(0, Activity::Type::drop_twist));
+            planner.detachMoveitCollisionObject(brick_name, start_poses[robot_id]);
+            act_graph.detach_obj(act_graph.get_last_obj(brick_name), act_graph.get_last_act(robot_id, Activity::Type::drop_twist));
         }
         if (mode == 11) {
-            act_graph.add_act(0, Activity::Type::drop_twist_up);
-            if (use_robot2) {
-                act_graph.add_act(1, Activity::Type::support_pre, act_graph.get_last_act(0, Activity::Type::drop_twist_up));
+            act_graph.add_act(robot_id, Activity::Type::drop_twist_up);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::support);
             } else {
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
         }
         if (mode == 12) {
-            act_graph.add_act(0, Activity::Type::home);
-            if (poses[1].use_robot) {
-                act_graph.add_act(1, Activity::Type::home);
-                planner.setCollision(last_brick_name, "right_arm_link_tool", false);
-                act_graph.set_collision(last_brick_name, "right_arm_link_tool", act_graph.get_last_act(1, Activity::Type::home), false);
+            act_graph.add_act(robot_id, Activity::Type::home);
+            if (sup_robot > -1) {
+                act_graph.add_act(sup_robot, Activity::Type::support_pre, act_graph.get_last_act(robot_id, Activity::Type::drop_twist_up));
             } else {
-                act_graph.add_act(1, Activity::Type::home);
+                act_graph.add_act(other_robot_id, Activity::Type::home);
             }
-            planner.setCollision(brick_name, "left_arm_link_tool", false);
-            act_graph.set_collision(brick_name, "left_arm_link_tool", act_graph.get_last_act(0, Activity::Type::home), false);
+            planner.setCollision(brick_name, eof_links[robot_id], false);
+            act_graph.set_collision(brick_name, eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::home), false);
         }
 
         // set start and goal robot pose in task graph
@@ -871,7 +914,7 @@ int main(int argc, char** argv) {
         pose1.joint_values = poses[1].joint_values;
         act_graph.get_last_act(1)->end_pose = pose1;
 
-        ROS_INFO("mode %d, task_id: %d, use robot 1: %d, use robot 2: %d", mode, task_idx, poses[0].use_robot, poses[1].use_robot);
+        ROS_INFO("mode %d, task_id: %d, robot_id: %d, sup_robot_id: %d, brick_name: %s", mode, task_idx, robot_id, sup_robot, brick_name.c_str());
         if (load_tpg) {
             std::shared_ptr<TPG::TPG> tpg = planner.loadTPG(output_dir + "/tpg_" + std::to_string(i) + ".txt");
             if (tpg != nullptr) {
@@ -892,14 +935,15 @@ int main(int argc, char** argv) {
         if (mode == 13) {
             mode = 0;
             task_idx ++;
-            use_robot2 = false;
         }
     }
     
     // create adg
     auto adg = std::make_shared<TPG::ADG>(act_graph);
     adg->init_from_tpgs(planner.getInstance(), tpg_config, tpgs);
-    adg->optimize(planner.getInstance(), tpg_config);
+    if (!benchmark) {
+        adg->optimize(planner.getInstance(), tpg_config);
+    }
 
     // save adg
     ROS_INFO("Saving ADG to file");
@@ -909,9 +953,18 @@ int main(int argc, char** argv) {
         ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
         return -1;
     }
-    // adg->saveToDotFile(output_dir + "/adg.dot");
+    adg->saveToDotFile(output_dir + "/adg.dot");
     boost::archive::text_oarchive oa(ofs);
     oa << adg;
+
+    if (!benchmark) {
+        // execute adg
+        planner.getInstance()->resetScene(true);
+        planner.initLegoPositions();
+        planner.set_tpg(adg);
+        planner.reset_joint_states_flag();
+        planner.execute(adg);
+    }
 
     ros::shutdown();
     return 0;

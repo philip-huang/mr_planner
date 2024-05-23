@@ -141,6 +141,7 @@ public:
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result, double col_step_size = 0.1) = 0;
     virtual bool sample(RobotPose &pose) = 0;
     virtual double getVMax(int robot_id);
+    virtual void setVmax(double vmax);
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
     virtual void addMoveableObject(const Object& obj) { throw std::runtime_error("Not implemented");};
     virtual void moveObject(const Object& obj) { throw std::runtime_error("Not implemented");};
@@ -189,6 +190,7 @@ public:
 
 protected:
     int num_robots_;
+    double v_max_;
     std::vector<RobotPose> start_poses_;
     std::vector<size_t> robot_dof_;
     std::vector<RobotPose> goal_poses_;

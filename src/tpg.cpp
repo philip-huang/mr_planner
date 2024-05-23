@@ -216,7 +216,6 @@ bool TPG::init(std::shared_ptr<PlanInstance> instance, const std::vector<RobotTr
     config_ = config;
     num_robots_ = instance->getNumberOfRobots();
     solution_ = solution;
-    shortcut_sampler_ = std::make_unique<ShortcutSampler>(config);
 
     auto t_start = std::chrono::high_resolution_clock::now();
 
@@ -567,6 +566,11 @@ void TPG::findShortcuts(std::shared_ptr<PlanInstance> instance, double runtime_l
     }
 }
 
+void TPG::initSampler() {
+    shortcut_sampler_ = std::make_unique<ShortcutSampler>(config_);
+    shortcut_sampler_->init(start_nodes_, numNodes_);
+}
+
 void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double runtime_limit) {
 
     // randomly sample shortcuts and check if they are valid for time
@@ -580,7 +584,7 @@ void TPG::findShortcutsRandom(std::shared_ptr<PlanInstance> instance, double run
         findTightType2Edges(earliest_t, latest_t);
     }
 
-    shortcut_sampler_->init(start_nodes_, numNodes_);
+    initSampler();
 
     if (config_.progress_file != "") {
         std::ofstream ofs(config_.progress_file, std::ofstream::out);
@@ -878,6 +882,7 @@ void TPG::updateTPG(const Shortcut &shortcut, const std::vector<Eigen::MatrixXi>
         node->pose = shortcut.path[i];
         n_prev->Type1Next = node;
         node->Type1Prev = n_prev;
+        node->actId = nj->actId;
         
         n_prev = node;
     }
