@@ -557,13 +557,19 @@ int main(int argc, char** argv) {
         }
     }
     else {
+        bool success = true;
         for (int i = 0; i < pose_names.size(); i++) {
             auto pose_name = pose_names[i];
-            pp_tester.test(pose_name, tpg_config);
+            success &= pp_tester.test(pose_name, tpg_config);
+            if (!success) {
+                ROS_ERROR("Failed to plan for pose: %s", pose_name.c_str());
+                ros::shutdown();
+                return -1;
+            }
         }
     }
     
-    
+    ROS_INFO("Planning completed successfully");
     ros::shutdown();
     return 0;
 }

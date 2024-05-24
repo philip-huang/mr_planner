@@ -119,6 +119,8 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
     numNodes_.resize(num_robots_, 0);
     solution_.resize(num_robots_);
 
+    auto t_start = std::chrono::high_resolution_clock::now();
+
     for (int i = 0; i < num_robots_; i++) {
         std::vector<std::shared_ptr<Node>> inter_nodes;
         for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
@@ -196,13 +198,13 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                 // updated attached / detached object
                 for (auto obj : act_i->obj_attached) {
                     instance->moveObject(obj->obj);
-                    instance->updateScene();
+                    //instance->updateScene();
                     instance->attachObjectToRobot(obj->obj.name, i, obj->next_attach_link, act_i->start_pose);
-                    instance->updateScene();
+                    //instance->updateScene();
                 }
                 for (auto obj : act_i->obj_detached) {
                     instance->detachObjectFromRobot(obj->obj.name, act_i->start_pose);
-                    instance->updateScene();
+                    //instance->updateScene();
                 }
 
                 // run bfs on the task graph
@@ -218,13 +220,13 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                     auto act_j = act_graph_.get(j, act_id_j);
                     for (auto obj : act_j->obj_attached) {
                         instance->moveObject(obj->obj);
-                        instance->updateScene();
+                        //instance->updateScene();
                         instance->attachObjectToRobot(obj->obj.name, j, obj->next_attach_link, act_j->start_pose);
-                        instance->updateScene();
+                        //instance->updateScene();
                     }
                     for (auto obj : act_j->obj_detached) {
                         instance->detachObjectFromRobot(obj->obj.name, act_j->start_pose);
-                        instance->updateScene();
+                        //instance->updateScene();
                     }
 
                     if (act_id_j == act_id_i) {
@@ -296,17 +298,24 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
         }
     }
     
+    t_init_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6;
+    t_start = std::chrono::high_resolution_clock::now();
+
     transitiveReduction();
 
     if (hasCycle()) {
         log("Naive TPG already has cycle", LogLevel::ERROR);
         return false;
     }
+    t_simplify_ = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - t_start).count() * 1e-6; 
+
+    int numtype2edges = getTotalType2Edges(); 
+    log("ADG initialized with " + std::to_string(getTotalNodes()) + " nodes and " + std::to_string(numtype2edges) + " type 2 edges in "
+        + std::to_string(t_init_) + "s", LogLevel::HLINFO);
 
     findFlowtimeMakespan(pre_shortcut_flowtime_, pre_shortcut_makespan_);
+    log("Flowtime: " + std::to_string(pre_shortcut_flowtime_) + " Makespan: " + std::to_string(pre_shortcut_makespan_), LogLevel::INFO);
 
-    log("ADG initialized", LogLevel::HLINFO);
-    
     return true;
 }
 
@@ -447,41 +456,40 @@ void ADG::update_joint_states(const std::vector<double> &joint_states, int robot
     if (num_robots_ > executed_acts_.size()) {
         return;
     }
-    // check if the activity is completed
-    for (int robot_id = 0; robot_id < num_robots_; robot_id++) {
-        int act_id = executed_acts_[robot_id]->load();
-        if (act_id >= act_graph_.num_activities(robot_id)) {
-            continue;
-        }
-        auto act = act_graph_.get(robot_id, act_id);
-        // compare the joint values
-        double error = 0;
-        for (int i = 0; i < joint_states_[robot_id].size(); i++) {
-            error += std::abs(joint_states_[robot_id][i] - act->end_pose.joint_values[i]);
-        }
-        if (error < 0.1) {
-            executed_acts_[robot_id]->fetch_add(1);
-            log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::DEBUG);
-            int act_id = executed_acts_[robot_id]->load();
-            while (act_id < act_graph_.num_activities(robot_id) - 1 && act_graph_.get(robot_id, act_id)->type == Activity::Type::home){
-                act_id ++;
-                executed_acts_[robot_id]->fetch_add(1);
-            }
-
-            // update any attached object
-            if (instance_) {
-                for (auto obj : act->obj_attached) {
-                    instance_->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act->start_pose);
-                    instance_->updateScene();
-                }
-                for (auto obj : act->obj_detached) {
-                    instance_->detachObjectFromRobot(obj->obj.name, act->start_pose);
-                    instance_->updateScene();
-                }
-            }
-            
-        }
+   
+    int act_id = executed_acts_[robot_id]->load();
+    if (act_id >= act_graph_.num_activities(robot_id)) {
+        return;
     }
+    auto act = act_graph_.get(robot_id, act_id);
+    // compare the joint values
+    double error = 0;
+    for (int i = 0; i < joint_states_[robot_id].size(); i++) {
+        error += std::abs(joint_states_[robot_id][i] - act->end_pose.joint_values[i]);
+    }
+    if (error < 0.1) {
+        executed_acts_[robot_id]->fetch_add(1);
+        log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::DEBUG);
+        int act_id = executed_acts_[robot_id]->load();
+        while (act_id < act_graph_.num_activities(robot_id) - 1 && act_graph_.get(robot_id, act_id)->type == Activity::Type::home){
+            act_id ++;
+            executed_acts_[robot_id]->fetch_add(1);
+        }
+
+        // update any attached object
+        if (instance_) {
+            for (auto obj : act->obj_attached) {
+                instance_->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act->start_pose);
+                instance_->updateScene();
+            }
+            for (auto obj : act->obj_detached) {
+                instance_->detachObjectFromRobot(obj->obj.name, act->start_pose);
+                instance_->updateScene();
+            }
+        }
+        
+    }
+    
 }
 
 bool ADG::moveit_execute(std::shared_ptr<MoveitInstance> instance, 
@@ -490,6 +498,11 @@ bool ADG::moveit_execute(std::shared_ptr<MoveitInstance> instance,
     instance_ = instance;
     for (int i = 0; i < num_robots_; i++) {
         executed_acts_.push_back(std::make_unique<std::atomic<int>>(0));
+        int act_id = 0;
+        while (act_id < act_graph_.num_activities(i) - 1 && act_graph_.get(i, act_id)->type == Activity::Type::home){
+            act_id ++;
+            executed_acts_[i]->fetch_add(1);
+        }
     }
     return TPG::moveit_execute(instance, move_group);
 }
@@ -498,6 +511,11 @@ bool ADG::moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_n
 {
     for (int i = 0; i < num_robots_; i++) {
         executed_acts_.push_back(std::make_unique<std::atomic<int>>(0));
+            int act_id = 0;
+        while (act_id < act_graph_.num_activities(i) - 1 && act_graph_.get(i, act_id)->type == Activity::Type::home){
+            act_id ++;
+            executed_acts_[i]->fetch_add(1);
+        }
     }
     return TPG::moveit_mt_execute(joint_names, clients);
 }

@@ -160,16 +160,16 @@ def add_baseline_processes(envs, shortcut_ts, id = 0):
 
 def add_lego_processes(task, seeds, id=0):
     processes = []
-    tight = True
     biased = False
     for seed in seeds:
-        ns = f'run_{id}'
-        id += 1
-        p = mp.Process(target=eval_lego, args=("/", task, 30.0, tight, biased, seed))
-        p.start()
-        processes.append(p)
-        time.sleep(1)
-        p.join()
+        for tight in [True, False]:
+            ns = f'run_{id}'
+            id += 1
+            p = mp.Process(target=eval_lego, args=("/", task, 60.0, tight, biased, seed))
+            p.start()
+            processes.append(p)
+            time.sleep(1)
+            p.join()
     return processes, id
 
 if __name__ == "__main__":
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     # for p in processes:
     #     p.join()
 
-    seeds = [1, 2, 3, 4]
-    processes, id = add_lego_processes('tower', seeds)
+    seeds = [0, 1, 2, 3, 4]
+    processes, id = add_lego_processes('stairs', seeds)
     # for p in processes:
     #     p.join()

@@ -190,7 +190,7 @@ public:
 
 protected:
     int num_robots_;
-    double v_max_;
+    double v_max_ = 1.0;
     std::vector<RobotPose> start_poses_;
     std::vector<size_t> robot_dof_;
     std::vector<RobotPose> goal_poses_;
