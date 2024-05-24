@@ -9,7 +9,6 @@
 
 #include <ros/ros.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <eigen_conversions/eigen_msg.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_eigen/tf2_eigen.h>
 
@@ -754,10 +753,10 @@ int main(int argc, char** argv) {
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
 
-        if (benchmark) {
-            adg->optimize(planner.getInstance(), tpg_config);
-        }
-        else {
+        adg->optimize(planner.getInstance(), tpg_config);
+        if (!benchmark) {
+            planner.getInstance()->resetScene(true);
+            planner.initLegoPositions();
             planner.set_tpg(adg);
             planner.reset_joint_states_flag();
             planner.execute(adg);
