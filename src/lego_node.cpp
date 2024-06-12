@@ -539,10 +539,11 @@ public:
         // define the object
         obj.state = Object::State::Static;
         obj.parent_link = "world";
+        lego_ptr_->get_brick_sizes(brick_name, obj.length, obj.width, obj.height);
 
         obj.x = brick_pose_mtx(0, 3);
         obj.y = brick_pose_mtx(1, 3);
-        obj.z = brick_pose_mtx(2, 3);
+        obj.z = brick_pose_mtx(2, 3) - obj.height/2;
         Eigen::Quaterniond quat(brick_pose_mtx.block<3, 3>(0, 0));
         obj.qx = quat.x();
         obj.qy = quat.y();
@@ -604,6 +605,88 @@ public:
 
         }
 
+    }
+
+    void get_brick_corners(const Object &obj, double &lx, double &ly, double &rx, double &ry) {
+        double yaw = atan2(2.0*(obj.qx*obj.qy + obj.qw*obj.qz), obj.qw*obj.qw + obj.qx*obj.qx - obj.qy*obj.qy - obj.qz*obj.qz);
+        yaw = yaw * 180.0 / M_PI;
+        double eps = 5;
+        if ((std::abs(yaw - 90) < eps) || (std::abs(yaw + 90) < eps)) {
+            lx = obj.x - obj.width/2;
+            rx = obj.x + obj.width/2;
+            ly = obj.y - obj.length/2;
+            ry = obj.y + obj.length/2;   
+        } else {
+            lx = obj.x - obj.length/2;
+            rx = obj.x + obj.length/2;
+            ly = obj.y - obj.width/2;
+            ry = obj.y + obj.width/2;
+        }
+    }
+
+    bool brick_overlap(const Object &obj1, const Object &obj2) {
+        double lx1, ly1, rx1, ry1, lx2, ly2, rx2, ry2;
+        get_brick_corners(obj1, lx1, ly1, rx1, ry1);
+        get_brick_corners(obj2, lx2, ly2, rx2, ry2);
+
+        if (lx1 > rx2 || lx2 > rx1) {
+            return false;
+        }
+        if (ly1 > ry2 || ly2 > ry1) {
+            return false;
+        }
+
+        return true;
+    }
+
+    void getLegoBottom(const std::string &brick_name, int task_idx, bool target_pose, std::vector<std::string> &bot_objects) {
+        // loop over all blocks, check if it is in previous task.
+        // if yes, use target position, otherwise use initial position
+        bot_objects.clear();
+
+        std::vector<std::string> brick_names = lego_ptr_->get_brick_names();
+        Object cur_obj;
+        if (target_pose) {
+            cur_obj = getLegoTarget(task_idx);
+        } else {
+            cur_obj = getLegoStart(brick_name);
+        }
+
+        std::map<std::string, int> moved_bricks;
+        for (int tid = 1; tid < task_idx; tid++) {
+            std::string brick_name;
+            getLegoBrickName(tid, brick_name);
+            moved_bricks[brick_name] = tid;
+        }
+
+        for (const auto & name : brick_names) {
+            if (name == brick_name) {
+                continue;
+            }
+            Object obj;
+            auto it = moved_bricks.find(name);
+            if (it != moved_bricks.end()) {
+                obj = getLegoTarget(it->second);
+            } else {
+                obj = getLegoStart(name);
+            }
+            
+            if (std::abs(cur_obj.z - cur_obj.height/2 - obj.z - obj.height/2) > 0.002) {
+                continue;
+            }
+            if (brick_overlap(cur_obj, obj)) {
+                bot_objects.push_back(name);
+            }
+        }
+        
+        if (bot_objects.size() == 0) {
+            bot_objects.push_back("table");
+        }
+
+        for (const auto & obj : bot_objects) {
+            ROS_INFO("Bottom object: %s", obj.c_str());
+        }
+        return;
     }
 
     std::shared_ptr<PlanInstance> getInstance() {
@@ -771,7 +854,7 @@ int main(int argc, char** argv) {
     int mode = 1;
     int task_idx = 1;
     std::string brick_name;
-    std::string last_brick_name = "b2_5"; // TODO: fix this hardcoding
+    std::vector<std::string> bottom_bricks;
     int robot_id = -1;
     int other_robot_id = -1;
     int sup_robot = -1;
@@ -823,8 +906,12 @@ int main(int argc, char** argv) {
             act_graph.add_act(other_robot_id, Activity::Type::home);
             planner.attachMoveitCollisionObject(brick_name, robot_id, eof_links[robot_id], start_poses[robot_id]);
             act_graph.attach_obj(act_graph.get_last_obj(brick_name), eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist));
-            planner.setCollision("table", eof_links[robot_id], true);
-            act_graph.set_collision("table", eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist), true);
+            
+            planner.getLegoBottom(brick_name, task_idx, false, bottom_bricks);
+            for (const auto & bottom_brick : bottom_bricks) {
+                planner.setCollision(bottom_brick, eof_links[robot_id], true);
+                act_graph.set_collision(bottom_brick, eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist), true);
+            }
         }
         if (mode == 5) {
             act_graph.add_act(robot_id, Activity::Type::pick_twist_up);
@@ -833,8 +920,10 @@ int main(int argc, char** argv) {
         if (mode == 6) {
             act_graph.add_act(robot_id, Activity::Type::home);
             act_graph.add_act(other_robot_id, Activity::Type::home);
-            planner.setCollision("table", eof_links[robot_id], false);
-            act_graph.set_collision("table", eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::home), false);
+            for (const auto & bottom_brick : bottom_bricks) {
+                planner.setCollision(bottom_brick, eof_links[robot_id], false);
+                act_graph.set_collision(bottom_brick, eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::home), false);
+            }
         }
         if (mode == 7) {
             act_graph.add_act(robot_id, Activity::Type::drop_tilt_up);
@@ -846,10 +935,13 @@ int main(int argc, char** argv) {
         }
         if (mode == 8) {
             act_graph.add_act(robot_id, Activity::Type::drop_up);
+            planner.getLegoBottom(brick_name, task_idx, true, bottom_bricks);
             if (sup_robot > -1) {
                 act_graph.add_act(sup_robot, Activity::Type::support);
-                planner.setCollision(last_brick_name, eof_links[sup_robot], true);
-                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::support), true);
+                for (const auto & bottom_brick : bottom_bricks) {
+                    planner.setCollision(bottom_brick, eof_links[sup_robot], true);
+                    act_graph.set_collision(bottom_brick, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::support), true);
+                }
             } else {
                 act_graph.add_act(other_robot_id, Activity::Type::home);
             }
@@ -862,9 +954,10 @@ int main(int argc, char** argv) {
                 act_graph.add_act(robot_id, Activity::Type::drop_down);
                 act_graph.add_act(other_robot_id, Activity::Type::home);
             }
-            planner.setCollision(last_brick_name, brick_name, true);
-            act_graph.set_collision(last_brick_name, brick_name, act_graph.get_last_act(robot_id, Activity::Type::drop_down), true);
-            last_brick_name = brick_name;
+            for (const auto & bottom_brick : bottom_bricks) {
+                planner.setCollision(bottom_brick, brick_name, true);
+                act_graph.set_collision(bottom_brick, brick_name, act_graph.get_last_act(robot_id, Activity::Type::drop_down), true);
+            }
         }
         if (mode == 10) {
             ROS_INFO("detach lego from robot %d", robot_id);
@@ -891,8 +984,10 @@ int main(int argc, char** argv) {
             act_graph.add_act(robot_id, Activity::Type::home);
             if (sup_robot > -1) {
                 act_graph.add_act(sup_robot, Activity::Type::home);
-                planner.setCollision(last_brick_name, eof_links[sup_robot], false);
-                act_graph.set_collision(last_brick_name, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::home), false);
+                for (const auto & bottom_brick : bottom_bricks) {
+                    planner.setCollision(bottom_brick, eof_links[sup_robot], false);
+                    act_graph.set_collision(bottom_brick, eof_links[sup_robot], act_graph.get_last_act(sup_robot, Activity::Type::home), false);
+                }
             } else {
                 act_graph.add_act(other_robot_id, Activity::Type::home);
             }
@@ -945,16 +1040,17 @@ int main(int argc, char** argv) {
     }
 
     // save adg
-    ROS_INFO("Saving ADG to file");
     act_graph.saveGraphToFile(output_dir + "/activity_graph.dot");
+    adg->saveToDotFile(output_dir + "/adg.dot");
+
     std::ofstream ofs(output_dir + "/adg.txt");
     if (!ofs.is_open()) {
         ROS_ERROR("Failed to open file: %s", (output_dir + "/adg.txt").c_str());
         return -1;
     }
-    adg->saveToDotFile(output_dir + "/adg.dot");
     boost::archive::text_oarchive oa(ofs);
     oa << adg;
+    ROS_INFO("Saved ADG to file");
 
     if (!benchmark) {
         // execute adg

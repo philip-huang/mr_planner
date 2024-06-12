@@ -21,6 +21,8 @@
 #include <boost/serialization/shared_ptr.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
 #include <memory>
 #include <vector>
 #include <random>
@@ -122,7 +124,7 @@ struct RobotPose {
         ar & joint_values;
     }
     int robot_id;
-    RobotMode mode;
+    // RobotMode mode;
     std::string robot_name; // same as group name in moveit
     std::vector<double> joint_values;
 };
