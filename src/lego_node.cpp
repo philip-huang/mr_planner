@@ -324,6 +324,7 @@ public:
     }
 
     bool planAndMove(const std::vector<GoalPose>& poses, const TPG::TPGConfig &tpg_config) {
+        auto t_start = std::chrono::high_resolution_clock::now();
         std::vector<double> all_joints;
         std::vector<double> all_joints_given;
         for (auto pose : poses) {
@@ -331,6 +332,9 @@ public:
         }
         std::vector<RobotTrajectory> solution;
         bool success = planJointSpace(poses, all_joints_given, solution);
+        int t_plan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+        planning_time_ += (t_plan_ms * 0.001);
+
         if (success) {
             if (tpg_ == nullptr) {
                 tpg_ = std::make_shared<TPG::TPG>();
@@ -448,6 +452,7 @@ public:
 
         std::vector<std::string> brick_names = lego_ptr_->get_brick_names();
         addMoveitCollisionObject("table");
+        instance_->setObjectColor("table", 1.0, 1.0, 1.0, 1.0);
         for (const auto & name : brick_names) {
             addMoveitCollisionObject(name);
         }
@@ -701,6 +706,10 @@ public:
         return current_joints_;
     }
 
+    double getPlanningTime() {
+        return planning_time_;
+    }
+
 
 private:
     ros::NodeHandle nh_;
@@ -743,6 +752,7 @@ private:
 
     std::string output_dir_;
     int counter_ = 0;
+    double planning_time_ = 0.0;
 };
 
 
@@ -835,7 +845,7 @@ int main(int argc, char** argv) {
         auto adg = std::make_shared<TPG::ADG>();
         boost::archive::text_iarchive ia(ifs);
         ia >> adg;
-
+    
         adg->optimize(planner.getInstance(), tpg_config);
         if (!benchmark) {
             planner.getInstance()->resetScene(true);
@@ -910,7 +920,9 @@ int main(int argc, char** argv) {
             planner.getLegoBottom(brick_name, task_idx, false, bottom_bricks);
             for (const auto & bottom_brick : bottom_bricks) {
                 planner.setCollision(bottom_brick, eof_links[robot_id], true);
+                planner.setCollision(bottom_brick, brick_name, true);
                 act_graph.set_collision(bottom_brick, eof_links[robot_id], act_graph.get_last_act(robot_id, Activity::Type::pick_twist), true);
+                act_graph.set_collision(bottom_brick, brick_name, act_graph.get_last_act(robot_id, Activity::Type::pick_twist), true);
             }
         }
         if (mode == 5) {
@@ -1031,6 +1043,8 @@ int main(int argc, char** argv) {
             task_idx ++;
         }
     }
+
+    ROS_INFO("Planning time total %f s", planner.getPlanningTime());
     
     // create adg
     auto adg = std::make_shared<TPG::ADG>(act_graph);

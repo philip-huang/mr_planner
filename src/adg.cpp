@@ -207,13 +207,24 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                     //instance->updateScene();
                 }
 
-                // run bfs on the task graph
+                auto act_i_start_node = intermediate_nodes_[i][act_id_i * 2];
+                auto act_i_end_node = intermediate_nodes_[i][act_id_i * 2 + 1];
+
+                // // run bfs on the task graph
+                // std::vector<std::vector<bool>> visited;
+                // for (int k = 0; k < num_robots_; k++) {
+                //     visited.push_back(std::vector<bool>(act_graph_.num_activities(i), false));
+                // }
+                // act_graph_.bfs(act_i, visited, true);
+                // act_graph_.bfs(act_i, visited, false);
+
+                // run bfs on the node graph
                 std::vector<std::vector<bool>> visited;
                 for (int k = 0; k < num_robots_; k++) {
-                    visited.push_back(std::vector<bool>(act_graph_.num_activities(i), false));
+                    std::vector<bool> v(numNodes_[k], false);
+                    visited.push_back(v);
                 }
-                act_graph_.bfs(act_i, visited, true);
-                act_graph_.bfs(act_i, visited, false);
+                bfs(act_i_start_node, visited, false);
 
                 for (int act_id_j = 0; act_id_j < act_graph_.num_activities(j); act_id_j++) {
                     // updated attached / detached object
@@ -233,15 +244,18 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                         // skip if they are in the same tpg because type-2 dependencies would have already been build
                         continue;
                     }
-                    if (visited[j][act_id_j]) {
+                    // if (visited[j][act_id_j]) {
+                    //     // skip if the two activities are dependent
+                    //     continue;
+                    // }
+                    
+                    auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
+                    auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
+
+                    if (visited[j][act_j_end_node->timeStep]) {
                         // skip if the two activities are dependent
                         continue;
                     }
-                    
-                    auto act_i_start_node = intermediate_nodes_[i][act_id_i * 2];
-                    auto act_i_end_node = intermediate_nodes_[i][act_id_i * 2 + 1];
-                    auto act_j_start_node = intermediate_nodes_[j][act_id_j * 2];
-                    auto act_j_end_node = intermediate_nodes_[j][act_id_j * 2 + 1];
                     
                     if (reached_t[j][act_j_start_node->timeStep] < reached_t[i][act_i_end_node->timeStep]) {
                         // check collision
@@ -254,6 +268,10 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                                 iter_node_j->timeStep <= act_j_end_node->timeStep &&
                                 reached_t[j][iter_node_j->timeStep] < reached_t[i][iter_node_i->timeStep]) 
                             {
+                                if (visited[j][iter_node_j->timeStep]) {
+                                    iter_node_j = iter_node_j->Type1Next;
+                                    continue;
+                                }
                                 bool has_collision = instance->checkCollision({iter_node_i->pose, iter_node_j->pose}, true);
                                 if (has_collision) {
                                     inCollision = true;
@@ -268,9 +286,11 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                                     iter_node_i->Type2Prev.push_back(edge);
                                     iter_node_j_start = iter_node_j->Type1Next;
                                     log("add type 2 edge from robot " + std::to_string(j) + " activity " 
-                                        + act_i->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)  +
-                                        " to robot " + std::to_string(i) + " activity " 
-                                        + act_j->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep), LogLevel::INFO);
+                                        + act_j->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)
+                                        + " " + std::to_string(reached_t[j][iter_node_j->timeStep])
+                                        + " to robot " + std::to_string(i) + " activity " 
+                                        + act_i->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep)
+                                        + " " + std::to_string(reached_t[i][iter_node_i->timeStep]) , LogLevel::INFO);
 
                                 }
                                 iter_node_j = iter_node_j->Type1Next;
@@ -284,10 +304,12 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                                 iter_node_j->Type2Next.push_back(edge);
                                 iter_node_i->Type2Prev.push_back(edge);
                                 iter_node_j_start = iter_node_j;
-                                log("add type 2 edge from robot " + std::to_string(j) + " activity " 
-                                        + act_i->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)  +
-                                        " to robot " + std::to_string(i) + " activity " 
-                                        + act_j->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep), LogLevel::INFO);
+                                log("add type 2 edge (end act) from robot " + std::to_string(j) + " activity " 
+                                        + act_j->type_string() + " timestep " + std::to_string(iter_node_j->timeStep)
+                                        + " " + std::to_string(reached_t[j][iter_node_j->timeStep])
+                                        + " to robot " + std::to_string(i) + " activity " 
+                                        + act_i->type_string() +  " timestep " + std::to_string(iter_node_i->timeStep)
+                                        + " " + std::to_string(reached_t[i][iter_node_i->timeStep]) , LogLevel::INFO);
 
                             }
                             iter_node_i = iter_node_i->Type1Next;
@@ -546,7 +568,7 @@ void ADG::checkShortcuts(std::shared_ptr<PlanInstance> instance, Shortcut &short
     std::shared_ptr<Activity> cur_act = shortcut.activity;
     assert(cur_act != nullptr);
     
-    instance->resetScene(true);
+    instance->resetScene(false);
     // add all static objects that needs to be collision checked
     std::vector<ObjPtr> indep_objs = act_graph_.find_indep_obj(cur_act);
     for (auto obj : indep_objs) {

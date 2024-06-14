@@ -51,6 +51,11 @@ void PlanInstance::setVmax(double vmax) {
     v_max_ = vmax;
 }
 
+void MoveitInstance::setPadding(double padding) {
+    planning_scene_->getCollisionEnvNonConst()->setPadding(padding);
+    planning_scene_->propogateRobotPadding();
+}
+
 bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {
     /* check if there is robot-robot or scene collision for a set of poses for some robots*/
     /* true if has collision, false if no collision*/
@@ -65,12 +70,13 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     std::vector<double> all_joints;
     collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrixNonConst();
 
-    // // print the acm entry names
+    // print the acm entry names
     // std::vector<std::string> acm_names;
     // acm.getAllEntryNames(acm_names);
     // for (const auto &entry : acm_names) {
-    //     log("ACM entry: " + entry, LogLevel::DEBUG);
+    //     std::cout << entry << " ";
     // }
+    // std::cout << std::endl;
 
     int index = 0;
     for (int i = 0; i < num_robots_; i++) {
@@ -110,7 +116,9 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
 
     c_res.clear();
     if (self) {
-        planning_scene_->checkSelfCollision(c_req, c_res, robot_state, acm);
+        //robot_state.updateCollisionBodyTransforms();
+        //planning_scene_->getCollisionEnv()->checkSelfCollision(c_req, c_res, robot_state, acm);
+        planning_scene_->checkSelfCollision(c_req, c_res, robot_state, acm);  
     } else {
         planning_scene_->checkCollision(c_req, c_res, robot_state, acm);
     }
@@ -314,6 +322,28 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
     planning_scene_diff_ = planning_scene;
 }
 
+void MoveitInstance::setObjectColor(const std::string &name, double r, double g, double b, double a) {
+    if (objects_.find(name) == objects_.end()) {
+        return;
+    }
+
+    moveit_msgs::ObjectColor oc;
+    oc.id = name;
+    oc.color.r = r;
+    oc.color.g = g;
+    oc.color.b = b;
+    oc.color.a = a;
+
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.object_colors.push_back(oc);
+    planning_scene.is_diff = true;
+
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+    moveit_msgs::ApplyPlanningScene srv;
+    srv.request.scene = planning_scene;
+    planning_scene_diff_client_.call(srv);
+}
+
 void MoveitInstance::moveObject(const Object& obj) {
     if (objects_.find(obj.name) == objects_.end()) {
         addMoveableObject(obj);
@@ -506,7 +536,7 @@ bool MoveitInstance::setCollision(const std::string& obj_name, const std::string
             }
             // by default we allow object to object collision
             else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
-                acm.entry_values[i].enabled.push_back(true);
+                acm.entry_values[i].enabled.push_back(false);
             }
             else {
                 acm.entry_values[i].enabled.push_back(false);
@@ -519,7 +549,7 @@ bool MoveitInstance::setCollision(const std::string& obj_name, const std::string
                 new_entry.enabled.push_back(allow);
             }
             else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
-                new_entry.enabled.push_back(true);
+                new_entry.enabled.push_back(false);
             }
             else {
                 new_entry.enabled.push_back(false);

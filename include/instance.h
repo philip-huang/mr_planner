@@ -16,6 +16,8 @@
 #include <moveit/collision_detection_fcl/collision_detector_allocator_fcl.h>
 #include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
 
+#include <std_msgs/ColorRGBA.h>
+
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/serialization.hpp>
 #include <boost/serialization/shared_ptr.hpp>
@@ -151,6 +153,7 @@ public:
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void updateScene() = 0;
     virtual void resetScene(bool reset_sim) = 0;
+    virtual void setPadding(double padding) {throw std::runtime_error("Not implemented");};
     virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) { throw std::runtime_error("Not implemented");};
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
@@ -217,6 +220,7 @@ public:
     virtual void moveObject(const Object& obj) override;
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) override;
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) override;
+    virtual void setObjectColor(const std::string &name, double r, double g, double b, double a);
     virtual moveit_msgs::PlanningScene getPlanningSceneDiff() const {
         return planning_scene_diff_;
     }
@@ -225,6 +229,7 @@ public:
     }
     virtual void updateScene() override;
     virtual void resetScene(bool reset_sim) override;
+    virtual void setPadding(double padding) override;
 
     virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) override;
 

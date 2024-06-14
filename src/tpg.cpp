@@ -1295,6 +1295,7 @@ bool TPG::bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited,
     // BFS function to find all the dependent nodes of ni
     std::queue<std::shared_ptr<Node>> q;
     q.push(ni);
+    visited[ni->robotId][ni->timeStep] = true;
     
     while (!q.empty()) {
         std::shared_ptr<Node> node = q.front();
