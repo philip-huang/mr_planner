@@ -149,6 +149,7 @@ public:
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
     virtual void addMoveableObject(const Object& obj) { throw std::runtime_error("Not implemented");};
     virtual void moveObject(const Object& obj) { throw std::runtime_error("Not implemented");};
+    virtual void moveRobot(int robot_id, const RobotPose& pose) { throw std::runtime_error("Not implemented");};
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void updateScene() = 0;
@@ -218,6 +219,7 @@ public:
     // Implementation of abstract methods using MoveIt functionalities
     virtual void addMoveableObject(const Object& obj) override;
     virtual void moveObject(const Object& obj) override;
+    virtual void moveRobot(int robot_id, const RobotPose& pose) override;
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) override;
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) override;
     virtual void setObjectColor(const std::string &name, double r, double g, double b, double a);

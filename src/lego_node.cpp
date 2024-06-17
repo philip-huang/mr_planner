@@ -80,8 +80,8 @@ void readPosesFromFile(const std::string& file_path, std::vector<std::vector<Goa
 class DualArmPlanner {
 public:
     DualArmPlanner(const std::string &planner_type, const std::string &output_dir,
-                const std::vector<std::string> &group_names, bool async, bool mfi, double vmax) : 
-        planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), async_(async), mfi_(mfi) {
+                const std::vector<std::string> &group_names, bool async, bool mfi, bool fake_move, double vmax) : 
+        planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), async_(async), mfi_(mfi), fake_move_(fake_move) {
         robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
         robot_model_ = robot_model_loader.getModel();
         move_group_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(PLANNING_GROUP);
@@ -255,6 +255,9 @@ public:
     }
 
     bool moveit_plan(const std::vector<double>& joint_values, std::vector<RobotTrajectory>& solution) {
+        auto start_state = planning_scene_->getCurrentStateNonConst();
+        start_state.setJointGroupPositions(move_group_->getName(), current_joints_);
+        move_group_->setStartState(start_state);
         move_group_->setJointValueTarget(joint_values);
         ROS_INFO("Planning with planner: %s", move_group_->getPlannerId().c_str());
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
@@ -273,6 +276,7 @@ public:
 
     void set_tpg(std::shared_ptr<TPG::TPG> tpg) {
         tpg_ = tpg;
+
     }
 
     void reset_joint_states_flag() {
@@ -281,6 +285,22 @@ public:
         while (!left_arm_joint_state_received || !right_arm_joint_state_received) {
             ros::Duration(0.01).sleep();
         }
+    }
+
+    bool fake_execute(std::shared_ptr<TPG::TPG> tpg) {
+        const RobotPose &pose = tpg->getEndNode(0)->pose;
+        instance_->moveRobot(0, pose);
+        instance_->updateScene();
+
+        const RobotPose &pose2 = tpg->getEndNode(1)->pose;
+        instance_->moveRobot(1, pose2);
+        instance_->updateScene();
+
+        for (size_t i = 0; i < 6; i++) {
+            current_joints_[i] = pose.joint_values[i];
+            current_joints_[7+i] = pose2.joint_values[i];
+        }
+        return true;
     }
 
     bool execute(std::shared_ptr<TPG::TPG> tpg) {
@@ -324,6 +344,13 @@ public:
     }
 
     bool planAndMove(const std::vector<GoalPose>& poses, const TPG::TPGConfig &tpg_config) {
+        if (fake_move_) {
+            dual_arm_sub.shutdown();
+        }
+        else {
+            reset_joint_states_flag();
+        }
+
         auto t_start = std::chrono::high_resolution_clock::now();
         std::vector<double> all_joints;
         std::vector<double> all_joints_given;
@@ -346,7 +373,11 @@ public:
             saveTPG(tpg_, output_dir_ + "/tpg_" + std::to_string(counter_) + ".txt");
             tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");
 
-            success &= execute(tpg_);
+            if (fake_move_) {
+                success &= fake_execute(tpg_);
+            } else {
+                success &= execute(tpg_);
+            }
         }
         counter_++;
         return success;
@@ -742,6 +773,7 @@ private:
 
     bool async_ = false;
     bool mfi_ = false;
+    bool fake_move_ = true;
     std::vector<std::string> group_names_; // group name for moveit controller services
 
     std::string planner_type_;
@@ -772,6 +804,7 @@ int main(int argc, char** argv) {
     bool load_tpg = false;
     bool load_adg = false;
     bool benchmark = false;
+    bool fake_move = false;
     double vmax = 1.0;
     std::vector<std::string> group_names = {"left_arm", "right_arm"};
     for (int i = 0; i < 2; i++) {
@@ -791,6 +824,10 @@ int main(int argc, char** argv) {
     nh.param<bool>("load_tpg", load_tpg, false);
     nh.param<bool>("load_adg", load_adg, false);
     nh.param<bool>("benchmark", benchmark, false);
+    nh.param<bool>("fake_move", fake_move, false);
+    if (mfi || load_tpg || load_adg) {
+        fake_move = false;
+    }
 
     // Initialize the Dual Arm Planner
     setLogLevel(LogLevel::INFO);
@@ -804,7 +841,7 @@ int main(int argc, char** argv) {
     tpg_config.dt = 0.1 / vmax;
     ROS_INFO("TPG Config: vmax: %f, dt: %f, shortcut_time: %f, tight_shortcut: %d", vmax, tpg_config.dt, tpg_config.shortcut_time, tpg_config.tight_shortcut);
 
-    DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi, vmax);
+    DualArmPlanner planner(planner_type, output_dir, group_names, async, mfi, fake_move, vmax);
 
     // wait 2 seconds
     ros::Duration(2).sleep();
@@ -1026,7 +1063,6 @@ int main(int argc, char** argv) {
             }
         }
         else {
-            planner.reset_joint_states_flag();
             bool success = planner.planAndMove(poses, tpg_config);
             if (!success) {
                 ROS_ERROR("Failed to plan and move mode %d, task_id: %d, robot_id: %d, sup_robot_id: %d, brick_name: %s", mode, task_idx, robot_id, sup_robot, brick_name.c_str());
@@ -1064,10 +1100,12 @@ int main(int argc, char** argv) {
     }
     boost::archive::text_oarchive oa(ofs);
     oa << adg;
+    ofs.close();
     ROS_INFO("Saved ADG to file");
 
     if (!benchmark) {
         // execute adg
+        planner.setup_once();
         planner.getInstance()->resetScene(true);
         planner.initLegoPositions();
         planner.set_tpg(adg);

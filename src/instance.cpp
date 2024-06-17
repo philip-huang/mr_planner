@@ -373,6 +373,22 @@ void MoveitInstance::moveObject(const Object& obj) {
     planning_scene_diff_ = planning_scene;
 }
 
+void MoveitInstance::moveRobot(int robot_id, const RobotPose& pose) {
+    moveit_msgs::PlanningScene cur_scene;
+    planning_scene_->getPlanningSceneMsg(cur_scene);
+
+    moveit_msgs::PlanningScene planning_scene;
+    planning_scene.is_diff = true;
+    auto joint_names = planning_scene_->getRobotModel()->getJointModelGroup(robot_names_[robot_id])->getActiveJointModelNames();
+    for (int i = 0; i < pose.joint_values.size(); i++) {
+        planning_scene.robot_state.joint_state.name.push_back(joint_names[i]);
+        planning_scene.robot_state.joint_state.position.push_back(pose.joint_values[i]);
+    }
+    planning_scene.robot_state.attached_collision_objects = cur_scene.robot_state.attached_collision_objects;
+    planning_scene_->usePlanningSceneMsg(planning_scene);
+    planning_scene_diff_ = planning_scene;
+}
+
 void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose& pose) {
     /*
     directly attach the object to the robot

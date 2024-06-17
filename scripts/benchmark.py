@@ -190,6 +190,6 @@ if __name__ == "__main__":
     #     p.join()
 
     seeds = [0, 1, 2, 3, 4]
-    processes, id = add_lego_processes('stairs', seeds)
+    processes, id = add_lego_processes('bridge_top', seeds)
     # for p in processes:
     #     p.join()

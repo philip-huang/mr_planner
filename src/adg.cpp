@@ -157,8 +157,8 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
         for (int act_id = 0; act_id < act_graph_.num_activities(i); act_id++) {
             std::shared_ptr<const Activity> act = act_graph_.get(i, act_id);
             for (auto dep : act->type2_prev) {
-                type2Edge edge;
-                edge.edgeId = idType2Edges_++;
+                std::shared_ptr<type2Edge> edge = std::make_shared<type2Edge>();
+                edge->edgeId = idType2Edges_++;
                 auto dep_end_node = intermediate_nodes_[dep->robot_id][dep->act_id * 2 + 1];
                 auto cur_start_node = intermediate_nodes_[i][act_id * 2];
                 assert(dep_end_node != nullptr);
@@ -166,8 +166,8 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                     log("activity depend on another terminal activity, this is deadlock!", LogLevel::ERROR);
                     return false;
                 }
-                edge.nodeFrom = dep_end_node->Type1Next;
-                edge.nodeTo = cur_start_node;
+                edge->nodeFrom = dep_end_node->Type1Next;
+                edge->nodeTo = cur_start_node;
                 dep_end_node->Type1Next->Type2Next.push_back(edge);
                 cur_start_node->Type2Prev.push_back(edge);
             }
@@ -278,10 +278,10 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                                 }
                                 else if (inCollision) {
                                     inCollision = false;
-                                    type2Edge edge;
-                                    edge.edgeId = idType2Edges_++;
-                                    edge.nodeFrom = iter_node_j;
-                                    edge.nodeTo = iter_node_i;
+                                    std::shared_ptr<type2Edge> edge = std::make_shared<type2Edge>();
+                                    edge->edgeId = idType2Edges_++;
+                                    edge->nodeFrom = iter_node_j;
+                                    edge->nodeTo = iter_node_i;
                                     iter_node_j->Type2Next.push_back(edge);
                                     iter_node_i->Type2Prev.push_back(edge);
                                     iter_node_j_start = iter_node_j->Type1Next;
@@ -297,10 +297,10 @@ bool ADG::init_from_tpgs(std::shared_ptr<PlanInstance> instance, const TPGConfig
                             }
                             if (inCollision) {
                                 assert(iter_node_j != nullptr);
-                                type2Edge edge;
-                                edge.edgeId = idType2Edges_++;
-                                edge.nodeFrom = iter_node_j;
-                                edge.nodeTo = iter_node_i;
+                                std::shared_ptr<type2Edge> edge = std::make_shared<type2Edge>();
+                                edge->edgeId = idType2Edges_++;
+                                edge->nodeFrom = iter_node_j;
+                                edge->nodeTo = iter_node_i;
                                 iter_node_j->Type2Next.push_back(edge);
                                 iter_node_i->Type2Prev.push_back(edge);
                                 iter_node_j_start = iter_node_j;
@@ -373,7 +373,7 @@ void ADG::findEarliestReachTimeSyncAct(int num_act, std::vector<std::vector<int>
                 if (nodes[i]->timeStep < intermediate_nodes_[i][act_id * 2 + 1]->timeStep) {
                     bool safe = true;
                     for (auto edge : nodes[i]->Type1Next->Type2Prev) {
-                        if (reached_t[edge.nodeFrom->robotId][edge.nodeFrom->timeStep] == -1) {
+                        if (reached_t[edge->nodeFrom->robotId][edge->nodeFrom->timeStep] == -1) {
                             safe = false;
                             break;
                         }
@@ -456,7 +456,7 @@ bool ADG::saveToDotFile(const std::string& filename) const {
         std::shared_ptr<Node> node_i = start_nodes_[i];
         while (node_i != nullptr) {
             for (auto edge : node_i->Type2Prev) {
-                out << "n" << edge.nodeFrom->robotId << "_" << edge.nodeFrom->timeStep << " -> " << "n" << i << "_" << node_i->timeStep << ";" << std::endl;
+                out << "n" << edge->nodeFrom->robotId << "_" << edge->nodeFrom->timeStep << " -> " << "n" << i << "_" << node_i->timeStep << ";" << std::endl;
             }
             node_i = node_i->Type1Next;
         }

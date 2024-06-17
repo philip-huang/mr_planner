@@ -70,9 +70,9 @@ namespace TPG {
 
         RobotPose pose; // < The pose of the robot at this Node
         std::shared_ptr<Node> Type1Next;                    ///< Pointer to the next Node of type 1
-        std::vector<type2Edge> Type2Next; ///< Vector of pointers to the next Nodes of type 2
+        std::vector<std::shared_ptr<type2Edge>> Type2Next; ///< Vector of pointers to the next Nodes of type 2
         std::shared_ptr<Node> Type1Prev;                    ///< Pointer to the previous Node of type 1
-        std::vector<type2Edge> Type2Prev; ///< Vector of pointers to the previous Nodes of type 2
+        std::vector<std::shared_ptr<type2Edge>> Type2Prev; ///< Vector of pointers to the previous Nodes of type 2
         int timeStep = -1;                       ///< The time step at which this Node exists
         int robotId = -1;                        ///< The ID of the robot at this Node
         int nodeId = -1;                         ///< The ID of the Node
