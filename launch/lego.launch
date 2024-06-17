@@ -15,7 +15,7 @@
     <arg name="vmax" default="2.0" />
     <arg name="planner" default="PrioritizedPlanning" />
     <arg name="benchmark" default="false"/>
-    <arg name="fake_move" default="false"/>
+    <arg name="fake_move" default="true"/>
 
     <!-- Workaround on wsl for opengl rendering issue -->
     <env name="LIBGL_ALWAYS_SOFTWARE" value="1"/>

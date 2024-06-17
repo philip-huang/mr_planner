@@ -24,3 +24,13 @@ jobs:
           echo "Planning did not complete successfully"
           exit 1
         fi
+    
+    - name: Check if lego planning works
+      run: |
+        timeout --signal=SIGINT 5m docker run --name mr_planner-container mr_planner-image -c "source /opt/ros/noetic/setup.bash && source /root/catkin_ws/devel/setup.bash && roslaunch mr_planner lego.launch task:=stairs benchmark:=true use_rviz:=false > output.txt 2>&1"
+        docker cp mr_planner-container:/root/catkin_ws/output.txt output.txt
+        docker rm mr_planner-container
+        if ! grep -q "Planning completed successfully" output.txt; then
+          echo "Planning did not complete successfully"
+          exit 1
+        fi

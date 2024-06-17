@@ -99,7 +99,7 @@ target_include_directories(lego PUBLIC
 # /*                             Testing Executables                            */
 # /* -------------------------------------------------------------------------- */
 add_executable(lego_node
-  src/lego_node.cpp
+  src/exe/lego_node.cpp
 )
 
 
@@ -114,7 +114,7 @@ install(TARGETS lego_node
 )
 
 add_executable(demo
-  src/demo_node.cpp
+  src/exe/demo_node.cpp
 )
 
 
@@ -128,7 +128,7 @@ install(TARGETS demo
 )
 
 add_executable(yk_robot
-  src/yk_interface.cpp
+  src/exe/yk_interface.cpp
 )
 
 target_include_directories(yk_robot PUBLIC
@@ -141,5 +141,18 @@ target_link_libraries(yk_robot
 )
 
 install(TARGETS yk_robot
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+add_executable(plan_node
+  src/exe/plan_node.cpp
+)
+
+target_link_libraries(plan_node
+  ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+)
+
+install(TARGETS plan_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

@@ -1113,6 +1113,7 @@ int main(int argc, char** argv) {
         planner.execute(adg);
     }
 
+    ROS_INFO("Planning completed successfully");
     ros::shutdown();
     return 0;
 }
