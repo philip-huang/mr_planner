@@ -24,7 +24,7 @@ ActivityGraph::ActivityGraph(int num_robots) {
 
 }
 
-void ActivityGraph::add_act(int robot_id, Activity::Type type) {
+std::shared_ptr<Activity> ActivityGraph::add_act(int robot_id, Activity::Type type) {
     assert(robot_id < num_robots_);
 
     std::shared_ptr<Activity> activity = std::make_shared<Activity>(robot_id, type);
@@ -37,9 +37,10 @@ void ActivityGraph::add_act(int robot_id, Activity::Type type) {
         prev_act->type1_next = activity;
         activity->type1_prev = prev_act;
     }
+    return activity;
 }
 
-void ActivityGraph::add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep) {
+std::shared_ptr<Activity> ActivityGraph::add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep) {
     assert(robot_id < num_robots_ && type2_dep != nullptr);
     std::shared_ptr<Activity> activity = std::make_shared<Activity>(robot_id, type);
     activity->act_id = activities_[robot_id].size();
@@ -53,6 +54,7 @@ void ActivityGraph::add_act(int robot_id, Activity::Type type, std::shared_ptr<A
         prev_act->type1_next = activity;
         activity->type1_prev = prev_act;
     }
+    return activity;
 }
 
 /* add a static object to the scene (no attached parent)*/

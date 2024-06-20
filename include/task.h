@@ -128,9 +128,9 @@ public:
     ActivityGraph() = default;
     ActivityGraph(int num_robots);
     
-    void add_act(int robot_id, Activity::Type type);
+    std::shared_ptr<Activity> add_act(int robot_id, Activity::Type type);
 
-    void add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep);
+    std::shared_ptr<Activity> add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep);
     
     /* add a static object to the scene (no attached parent)*/
     ObjPtr add_obj(const Object &obj);

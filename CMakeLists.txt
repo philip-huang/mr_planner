@@ -151,6 +151,7 @@ add_executable(plan_node
 target_link_libraries(plan_node
   ${PROJECT_NAME}
   ${catkin_LIBRARIES}
+  jsoncpp
 )
 
 install(TARGETS plan_node

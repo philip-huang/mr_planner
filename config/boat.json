@@ -74,7 +74,7 @@
             },
             {
                 "task": "place",
-                "obj": "roa_2",
+                "obj": "rod_2",
                 "id": 3
             }
         ],
@@ -89,17 +89,7 @@
                 "obj": "rod_3",
                 "id": 5
             }
-        ],
-        "task_dep": [
-            {
-                "task": 2,
-                "dep": 0
-            },
-            {
-                "task": 3,
-                "dep": 1
-            }
-        ]
-    }
-    
+        ] 
+    },
+    "task_dep": []
 }

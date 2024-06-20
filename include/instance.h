@@ -72,6 +72,11 @@ struct Object  {
         Mesh = 3,
     };
 
+    Object() = default;
+    Object(const std::string &name, State state, double x, double y, double z, double qx, double qy, double qz, double qw):
+        name(name), state(state), x(x), y(y), z(z), qx(qx), qy(qy), qz(qz), qw(qw) 
+        {}
+    
     std::string name;
     // mode of the object
     State state;

@@ -15,13 +15,14 @@
 #include <planner.h>
 #include <adg.h>
 #include <logger.h>
-
+#include <jsoncpp/json/json.h>
+#include <jsoncpp/json/value.h>
 
 class Planner {
 public:
     Planner(const std::string& planning_group, const std::string &planner_type, const std::string &output_dir,
-            const std::vector<std::string> &group_names, bool fake_move, double vmax) : 
-        planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), fake_move_(fake_move) {
+            const std::vector<std::string> &group_names, const std::vector<std::string> &eof_groups, bool fake_move, double vmax) : 
+        planner_type_(planner_type), output_dir_(output_dir), group_names_(group_names), eof_groups_(eof_groups), fake_move_(fake_move) {
         
         num_robots_ = group_names.size();
 
@@ -244,7 +245,11 @@ public:
         return success;
     }
 
-    void addMoveitCollisionObject(const std::string &name) {
+    void addMoveitCollisionObject(const Object &obj) {
+        instance_->addMoveableObject(obj);
+        instance_->updateScene();
+
+        ROS_INFO("Added collision object %s", obj.name.c_str());
     }
 
     void attachMoveitCollisionObject(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) {
@@ -306,7 +311,139 @@ public:
         return planning_time_;
     }
 
-    void read_act_graph(const std::string &filename) {
+    void init_act_graph(const std::string &config_fname) {
+        // read the json file
+        std::ifstream config_file(config_fname);
+        log("Reading config file: " + config_fname, LogLevel::INFO);
+        Json::Value config;
+        config_file >> config;
+
+        act_graph_ = std::make_shared<ActivityGraph>(num_robots_);
+        
+        std::map<std::string, ObjPtr> obj_map;
+
+        const Json::Value objects = config["objects"];
+        for (const auto &objectName : objects.getMemberNames()) {
+            const Json::Value obj = objects[objectName];
+            std::string shape = obj["shape"].asString();
+            double x = obj["x"].asDouble();
+            double y = obj["y"].asDouble();
+            double z = obj["z"].asDouble();
+            std::string grip_pose = obj["grip_pose"].asString();
+
+            const Json::Value quat = obj["quat"];
+            double qx = quat[0].asDouble();
+            double qy = quat[1].asDouble();
+            double qz = quat[2].asDouble();
+            double qw = quat[3].asDouble();
+
+            Object object(objectName, Object::State::Static, x, y, z, qx, qy, qz, qw);
+            if (shape == "box") {
+                object.shape = Object::Shape::Box;
+                object.length = obj["length"].asDouble();;
+                object.width = obj["width"].asDouble();;
+                object.height = obj["height"].asDouble();;
+            } else if (shape == "cylinder") {
+                object.shape = Object::Shape::Cylinder;
+                object.length = obj["length"].asDouble();;
+                object.radius = obj["radius"].asDouble();;
+            }
+            ObjPtr obj_p = act_graph_->add_obj(object);
+            obj_map[objectName] = obj_p;
+
+            std::cout << "Object: " << objectName << ", Shape: " << shape 
+                    << ", Position: (" << x << ", " << y << ", " << z << ")"
+                    << ", Quaternion: (" << qx << ", " << qy << ", " << qz << ", " << qw << ")"
+                    << ", Grip Pose: " << grip_pose << std::endl;
+        }
+
+        std::map<std::string, ObjPtr> goalobj_map;
+
+        // Access goal
+        const Json::Value goal = config["goal"];
+        for (const auto &goalName : goal.getMemberNames()) {
+            const Json::Value obj = goal[goalName];
+            double x = obj["x"].asDouble();
+            double y = obj["y"].asDouble();
+            double z = obj["z"].asDouble();
+
+            const Json::Value quat = obj["quat"];
+            double qx = quat[0].asDouble();
+            double qy = quat[1].asDouble();
+            double qz = quat[2].asDouble();
+            double qw = quat[3].asDouble();
+
+            Object goal_obj(goalName, Object::State::Static, x, y, z, qx, qy, qz, qw);
+            ObjPtr obj_p = act_graph_->add_obj(goal_obj);
+            goalobj_map[goalName] = obj_p;
+
+            std::cout << "Goal: " << goalName 
+                    << ", Position: (" << x << ", " << y << ", " << z << ")"
+                    << ", Quaternion: (" << qx << ", " << qy << ", " << qz << ", " << qw << ")" << std::endl;
+        }
+
+        // Access sequence
+        const Json::Value sequence = config["sequence"];
+
+        // For each robot arm sequence
+        std::map<int, std::shared_ptr<Activity>> act_map;
+        for (const auto &robotArm : sequence.getMemberNames()) {
+            int robot_id = robotArm[5] - '0';
+            std::string eof_group = eof_groups_[robot_id];
+            const std::vector<std::string>& ee_links = robot_model_->getJointModelGroup(eof_groups_[robot_id])->getLinkModelNames();
+           
+            const Json::Value tasks = sequence[robotArm];
+            if (tasks.isArray()) {
+                for (const auto &task : tasks) {
+                    std::string taskType = task["task"].asString();
+                    std::string obj = task["obj"].asString();
+                    int id = task["id"].asInt();
+
+                    if (taskType == "pick") {
+                        auto act_pre = act_graph_->add_act(robot_id, Activity::Type::pick_up);
+                        auto act = act_graph_->add_act(robot_id, Activity::Type::pick_down);
+                        act_graph_->attach_obj(obj_map[obj], ee_links.front(), act);
+                        for (const auto &link_name : ee_links) {
+                            std::cout << "Setting collision for " << obj << " and " << link_name << std::endl;
+                            act_graph_->set_collision(obj, link_name, act, true);
+                        }
+
+                        act_map[id] = act;
+                    } else if (taskType == "drop") {
+                        auto act_pre = act_graph_->add_act(robot_id, Activity::Type::drop_down);
+                        auto act = act_graph_->add_act(robot_id, Activity::Type::drop_up);
+                        auto act_post = act_graph_->add_act(robot_id, Activity::Type::home);
+                        act_graph_->detach_obj(goalobj_map[obj], act);
+                        for (const auto &link_name : ee_links) {
+                            std::cout << "Setting collision for " << obj << " and " << link_name << std::endl;
+                            act_graph_->set_collision(obj, link_name, act_post, false);
+                        }
+                        act_map[id] = act;
+                    }
+                    std::cout << "Robot Arm: " << robotArm 
+                            << ", Task: " << taskType 
+                            << ", Object: " << obj 
+                            << ", ID: " << id << std::endl;
+                }
+            }
+        }
+
+        // Access task dependencies
+        const Json::Value taskDeps = sequence["task_dep"];
+        for (const auto &dep : taskDeps) {
+            int task = dep["task"].asInt();
+            const Json::Value deps = dep["deps"];
+            std::cout << "Task Dependency: Task " << task << " depends on ";
+            for (const auto &d : deps) {
+                int dependency = d.asInt();
+                act_map[task]->add_type2_dep(act_map[dependency]);
+                act_map[dependency]->add_type2_next(act_map[task]);
+                std::cout << "Task " << dependency << ", ";
+            }
+            
+            std::cout << std::endl;
+        }
+        
     }
 
 
@@ -322,6 +459,7 @@ private:
     int num_robots_;
     std::vector<int> robot_dofs_;
     std::vector<std::string> group_names_; // group name for moveit controller services
+    std::vector<std::string> eof_groups_; // group name for end effector
 
     ros::ServiceClient planning_scene_diff_client;
 
@@ -340,6 +478,7 @@ private:
     std::string planner_type_;
     std::shared_ptr<MoveitInstance> instance_;
     std::shared_ptr<PriorityPlanner> pp_planner_;
+    std::shared_ptr<ActivityGraph> act_graph_;
 
     std::vector<moveit::planning_interface::MoveGroupInterface::Plan> plans_;
 
@@ -368,6 +507,7 @@ int main(int argc, char** argv) {
     int num_robots = 3;
     std::vector<std::string> group_names = {"panda0_arm", "panda1_arm", "panda2_arm"};
     nh.param<int>("num_robots", num_robots, 2);
+    group_names.resize(num_robots);
     for (int i = 0; i < num_robots; i++) {
         if (nh.hasParam("group_name_" + std::to_string(i))) {
             nh.getParam("group_name_" + std::to_string(i), group_names[i]);
@@ -375,6 +515,7 @@ int main(int argc, char** argv) {
     }
     nh.param<std::string>("planning_group", planning_group, "panda_multi_arm");
     std::vector<std::string> eof_groups = {"panda0_hand", "panda1_hand", "panda2_hand"};
+    eof_groups.resize(num_robots);
     for (int i = 0; i < num_robots; i++) {
         if (nh.hasParam("eof_group_" + std::to_string(i))) {
             nh.getParam("eof_group_" + std::to_string(i), eof_groups[i]);
@@ -405,7 +546,7 @@ int main(int argc, char** argv) {
     tpg_config.dt = 0.1 / vmax;
     ROS_INFO("TPG Config: vmax: %f, dt: %f, shortcut_time: %f, tight_shortcut: %d", vmax, tpg_config.dt, tpg_config.shortcut_time, tpg_config.tight_shortcut);
 
-    Planner planner(planning_group, planner_type, output_dir, group_names, fake_move, vmax);
+    Planner planner(planning_group, planner_type, output_dir, group_names, eof_groups, fake_move, vmax);
 
     // wait 2 seconds
     ros::Duration(2).sleep();
@@ -413,7 +554,7 @@ int main(int argc, char** argv) {
     ROS_INFO("Execution setup done");
 
     
-    planner.read_act_graph(config_fname);
+    planner.init_act_graph(config_fname);
     
 
     ros::shutdown();

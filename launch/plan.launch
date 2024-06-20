@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- Gazebo options -->
+    <arg name="ns" default="/"/>
+    <arg name="use_rviz" default="true"/>
+    <arg name="task" default="boat"/>
+    <arg name="load_tpg" default="false" />
+    <arg name="load_adg" default="false" />
+    <arg name="shortcut_time" default="1.0" />
+    <arg name="tight_shortcut" default="false" />
+    <arg name="progress_file" default="$(find mr_planner)/outputs/lego/$(arg task)/progress.csv" />
+    <arg name="seed" default="1" />
+    <arg name="vmax" default="2.0" />
+    <arg name="planner" default="PrioritizedPlanning" />
+    <arg name="benchmark" default="false"/>
+    <arg name="fake_move" default="true"/>
+
+    <!-- Workaround on wsl for opengl rendering issue -->
+    <env name="LIBGL_ALWAYS_SOFTWARE" value="1"/>
+
+    <!-- Start the robot state publisher, simulation, and controler -->
+    <!-- <include file="$(find dual_gp4_moveit_config)/launch/demo_gazebo.launch">
+    </include> -->
+
+    <group ns="$(arg ns)">
+        <include file="$(find panda_three_round_moveit_config)/launch/demo.launch">
+            <arg name="use_rviz" value="$(arg use_rviz)" />
+        </include>
+
+        <!-- Start the planning node -->
+        
+        <node name="plan_node" pkg="mr_planner" type="plan_node" output="screen" required="true">
+            <param name="planner_type" value="$(arg planner)"/>
+            <param name="config_fname" value="$(find mr_planner)/config/$(arg task).json"/>
+            <param name="output_dir" value="$(find mr_planner)/outputs/$(arg task)"/>
+            <param name="num_robots" value="3" />
+            <param name="movegroup_name" value="panda_multi_arm" />
+            <param name="group_name_0" value="panda0_arm" />
+            <param name="group_name_1" value="panda1_arm" />
+            <param name="group_name_2" value="panda2_arm" />
+            <param name="eof_group_0" value="panda0_hand" />
+            <param name="eof_group_1" value="panda1_hand" />
+            <param name="eof_group_2" value="panda2_hand" />
+            <param name="load_tpg" value="$(arg load_tpg)" />
+            <param name="load_adg" value="$(arg load_adg)" />
+            <param name="shortcut_time" value="$(arg shortcut_time)" />
+            <param name="tight_shortcut" value="$(arg tight_shortcut)" />
+            <param name="progress_file" value="$(arg progress_file)" />
+            <param name="seed" value="$(arg seed)" />
+            <param name="vmax" value="$(arg vmax)" />
+            <param name="benchmark" value="$(arg benchmark)" />
+            <param name="fake_move" value="$(arg fake_move)" />
+        </node>
+    </group>
+
+
+</launch>
