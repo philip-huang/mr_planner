@@ -47,6 +47,11 @@ RUN cd catkin_ws/src \
     && cd Robot_Digital_Twin \
     && git checkout dual-arm-mfi
 
+RUN cd catkin_ws/src \
+    && git clone https://github.com/intelligent-control-lab/Robotic_Lego_Manipulation.git \
+    && cd Robotic_Lego_Manipulation \
+    && git checkout dual-arm-mfi
+
 # build the workspace
 RUN /bin/bash -c '. /opt/ros/noetic/setup.bash; cd catkin_ws; catkin build'
 

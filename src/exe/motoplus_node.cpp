@@ -183,7 +183,7 @@ public:
                 dist_a += (joint_goal_a[i] - joint_pos_fbk_a[i]) * (joint_goal_a[i] - joint_pos_fbk_a[i]);
                 dist_b += (joint_goal_b[i] - joint_pos_fbk_b[i]) * (joint_goal_b[i] - joint_pos_fbk_b[i]);
             }
-            if (dist_a < 0.01) {
+            if (dist_a < 0.0001) {
                 ida = nodea->timeStep;
                 if (nodea->Type1Next != nullptr) {
                     bool safe = true;
@@ -200,7 +200,7 @@ public:
                     }
                 }
             }
-            if (dist_b < 0.01) {
+            if (dist_b < 0.0001) {
                 idb = nodeb->timeStep;
                 if (nodeb->Type1Next != nullptr) {
                     bool safe = true;
