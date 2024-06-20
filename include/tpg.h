@@ -206,6 +206,7 @@ namespace TPG {
         virtual bool moveit_mt_execute(const std::vector<std::vector<std::string>> &joint_names, std::vector<ros::ServiceClient> &clients);
         virtual void update_joint_states(const std::vector<double> &joint_states, int robot_id);
         virtual void saveStats(const std::string &filename, const std::string &start_pose = "", const std::string &goal_pose = "") const;
+        virtual void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, double &flowtime, double &makespan) const;
         void getSolution(std::vector<RobotTrajectory> &solution) const {
             solution = solution_;
         }
@@ -232,6 +233,10 @@ namespace TPG {
             return t_shortcut_;
         }
 
+        TPGConfig getConfig() const {
+            return config_;
+        }
+
     protected:
         int getTotalNodes() const;
         int getTotalType2Edges() const;
@@ -253,7 +258,6 @@ namespace TPG {
         bool dfs(std::shared_ptr<Node> ni, std::shared_ptr<Node> nj, std::vector<std::vector<bool>> &visited) const;
         bool bfs(std::shared_ptr<Node> ni, std::vector<std::vector<bool>> &visited, bool forward) const;
         bool hasCycle() const;
-        void setSyncJointTrajectory(trajectory_msgs::JointTrajectory &joint_traj, double &flowtime, double &makespan) const;
         void moveit_async_execute_thread(const std::vector<std::string> &joint_names, ros::ServiceClient &clients, int robot_id);
 
         TPGConfig config_;
