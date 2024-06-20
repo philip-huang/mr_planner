@@ -34,21 +34,25 @@ public:
         delete[] joint_pos_fbk_b;
     }
 
-    bool init(const std::string &tpg_path, bool adg) {
+    bool init(const std::string &tpg_path, const std::string &type) {
         std::ifstream ifs(tpg_path);
         if (!ifs.is_open()) {
             ROS_ERROR("Failed to open file: %s", tpg_path.c_str());
             return false;
         }
-        if (adg) {
+        if (type=="adg") {
             auto adg = std::make_shared<TPG::ADG>();
             boost::archive::text_iarchive ia(ifs);
             ia >> adg;
             tpg_ = adg;
-        } else {
+        } else if (type=="tpg") {
             tpg_ = std::make_shared<TPG::TPG>();
             boost::archive::text_iarchive ia(ifs);
             ia >> tpg_;
+        } else {
+            tpg_ = std::make_shared<TPG::TPG>();
+            boost::archive::text_iarchive ia(ifs);
+            ia >> *tpg_;
         }
 
 
@@ -73,14 +77,19 @@ public:
         printf("Robot A joint targets: %f %f %f %f %f %f\n", joint_pos_cmd_a[0], joint_pos_cmd_a[1], joint_pos_cmd_a[2], joint_pos_cmd_a[3], joint_pos_cmd_a[4], joint_pos_cmd_a[5]);
         printf("Robot B joint targets: %f %f %f %f %f %f\n", joint_pos_cmd_b[0], joint_pos_cmd_b[1], joint_pos_cmd_b[2], joint_pos_cmd_b[3], joint_pos_cmd_b[4], joint_pos_cmd_b[5]);
     }
-     
+    
+    void send_pos_cmd() {
+        robot_hw_.setJointPosCmd(joint_pos_cmd_a, robot_index_b);
+        robot_hw_.setJointPosCmd(joint_pos_cmd_b, robot_index_a);
+    }
+
     void goto_start() {
         std::vector<double> pos0 = traj_.points[0].positions;
         double t = 0;
 
         while (true) {
-            robot_hw_.getJointPos(joint_pos_fbk_a, robot_index_a);
-            robot_hw_.getJointPos(joint_pos_fbk_b, robot_index_b);
+            robot_hw_.getJointPos(joint_pos_fbk_a, robot_index_b);
+            robot_hw_.getJointPos(joint_pos_fbk_b, robot_index_a);
             printf("t = %f\n", t);
             print_joint_pos();
 
@@ -98,17 +107,21 @@ public:
 
             //move to the start pos at 1m/s
             for (int i = 0; i < 6; i++) {
-                joint_pos_cmd_a[i] = joint_pos_fbk_a[i] + (pos0[i] - joint_pos_fbk_a[i]) / delta_a * std::min(delta_a, 0.004);
-                joint_pos_cmd_b[i] = joint_pos_fbk_b[i] + (pos0[i+7] - joint_pos_fbk_b[i]) / delta_b * std::min(delta_b, 0.004);
+                joint_pos_cmd_a[i] = joint_pos_fbk_a[i] + (pos0[i] - joint_pos_fbk_a[i]) / delta_a * std::min(delta_a, 0.004 / scale_);
+                joint_pos_cmd_b[i] = joint_pos_fbk_b[i] + (pos0[i+7] - joint_pos_fbk_b[i]) / delta_b * std::min(delta_b, 0.004 / scale_);
             }
 
-            robot_hw_.setJointPosCmd(joint_pos_cmd_a, robot_index_a);
-            robot_hw_.setJointPosCmd(joint_pos_cmd_b, robot_index_b);
+            //send_pos_cmd();
+
             t += 0.004;
             usleep(4000);
         }
 
         return;
+    }
+
+    void set_scale(double scale) {
+        scale_ = scale;
     }
 
 
@@ -124,28 +137,38 @@ public:
 
         std::vector<double> pos0 = points[idx].positions;
         std::vector<double> pos = pos0;
+        std::vector<double> vel(14, 0);
         double t = 0;
         
         while (true) {
-            if (t > points[idx].time_from_start.toSec()) {
+            if (t > points[idx+1].time_from_start.toSec() * scale_) {
                 idx++;
-                if (idx >= points.size() - 1) {
+                if ((idx+1) == points.size()) {
                     break;
                 }
                 pos0 = points[idx].positions;
             }
 
             // interpolate between two points
-            for (int i = 0; i < traj_.joint_names.size(); i++) {
-                double alpha = (t - points[idx].time_from_start.toSec()) / (points[idx+1].time_from_start.toSec() - points[idx].time_from_start.toSec());
+            for (int i = 0; i < 6; i++) {
+                double tgoal = points[idx+1].time_from_start.toSec() * scale_;
+                double tstart = points[idx].time_from_start.toSec() * scale_;
+                double alpha = (t - tstart) / (tgoal-tstart);
                 pos[i] = pos0[i] + (points[idx+1].positions[i] - pos0[i]) * alpha;
+                pos[7+i] = pos0[7+i] + (points[idx+1].positions[7+i] - pos0[7+i]) * alpha;
+            }   
+
+            for (int i = 0; i < 6; i++) {
+                vel[i] = pos[i] - joint_pos_cmd_a[i];
+                vel[i+7] = pos[i+7] - joint_pos_cmd_b[i];
             }
+            //printf("Vel A: %.4f %.4f %.4f %.4f %.4f %.4f\n", vel[0], vel[1], vel[2], vel[3], vel[4], vel[5]);
+            //printf("Vel B: %.4f %.4f %.4f %.4f %.4f %.4f\n", vel[7], vel[8], vel[9], vel[10], vel[11], vel[12]);
 
             std::copy(pos.begin(), pos.begin()+6, joint_pos_cmd_a);
             std::copy(pos.begin()+7, pos.begin()+13, joint_pos_cmd_b);
 
-            robot_hw_.setJointPosCmd(joint_pos_cmd_a, robot_index_a);
-            robot_hw_.setJointPosCmd(joint_pos_cmd_b, robot_index_b);
+            send_pos_cmd();
 
             // print the set joint positions with printf
             printf("t = %f\n", t);
@@ -176,8 +199,8 @@ public:
 
         while (true) {
 
-            robot_hw_.getJointPos(joint_pos_fbk_a, robot_index_a);
-            robot_hw_.getJointPos(joint_pos_fbk_b, robot_index_b);
+            robot_hw_.getJointPos(joint_pos_fbk_a, robot_index_b);
+            robot_hw_.getJointPos(joint_pos_fbk_b, robot_index_a);
             double dist_a = 0, dist_b = 0;
             for (int i = 0; i < 6; i++) {
                 dist_a += (joint_goal_a[i] - joint_pos_fbk_a[i]) * (joint_goal_a[i] - joint_pos_fbk_a[i]);
@@ -243,6 +266,7 @@ private:
     HardwareInterface robot_hw_;
     int robot_index_a = 0;
     int robot_index_b = 1;
+    double scale_ = 1.0;
     double *joint_pos_cmd_a, *joint_pos_cmd_b;
     double *joint_pos_fbk_a, *joint_pos_fbk_b;
     std::shared_ptr<TPG::TPG> tpg_;
@@ -262,9 +286,8 @@ int main(int argc, char *argv[])
 
     MotoPlusExecutor executor;
 
-    bool adg = (type == "adg") ? true : false;
-
-    executor.init(adg_path, adg);
+    executor.set_scale(1.5);
+    executor.init(adg_path, type);
     //executor.goto_start();
     executor.sync_exec();
 
