@@ -1,21 +1,25 @@
 <?xml version="1.0"?>
 <launch>
 
-    <include file="$(find dual_gp4_moveit_config)/launch/demo.launch"/>
+    <arg name="task" value="stairs_top"/>
+    <arg name="use_rviz" value="false"/>
 
+    <include file="$(find dual_gp4_moveit_config)/launch/demo.launch">
+        <arg name="use_rviz" value="$(arg use_rviz)" />
+    </include>
     <!-- Start the planning node -->
     
     <node name="lego_node" pkg="mr_planner" type="lego_node" output="screen">
-        <param name="fullorder_targets_filename" value="$(find mr_planner)/assembly_steps/stairs_top.csv" />
+        <param name="fullorder_targets_filename" value="$(find mr_planner)/assembly_steps/$(arg task).csv" />
         <param name="planner_type" value="PrioritizedPlanning"/>
-        <param name="config_fname" value="$(find lego_manipulation)/config/user_config.json"/>
+        <param name="config_fname" value="$(find lego_manipulation)/config/user_config_$(arg task).json"/>
         <param name="root_pwd" value="$(find lego_manipulation)/"/>
-        <param name="output_dir" value="$(find mr_planner)/outputs/lego"/>
+        <param name="output_dir" value="$(find mr_planner)/outputs/lego/$(arg task)"/>
         <param name="group_name_0" value="/yk_destroyer" />
         <param name="group_name_1" value="/yk_architect" />
         <param name="mfi" value="true" />
         <param name="async" value="true" />
-        <param name="load_tpg" value="true" />
+        <param name="load_tpg" value="false" />
         <param name="load_adg" value="true" />
     </node>
     
