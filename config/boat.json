@@ -4,31 +4,31 @@
             "shape": "cylinder",
             "length": 0.1,
             "radius": 0.015,
-            "x": 0.661,
+            "x": 0.761,
             "y": 0.0,
             "z": 0.9748,
             "quat": [0.5, 0.5, 0.5, 0.5],
-            "grip_pose": "top"
+            "grip_pose": "right"
         },
         "rod_2": {
             "shape": "cylinder",
             "length": 0.1,
             "radius": 0.015,
-            "x": 0.661,
+            "x": 0.461,
             "y": 0.0,
             "z": 0.9748,
             "quat": [0.5, 0.5, 0.5, 0.5],
-            "grip_pose": "top"
+            "grip_pose": "right"
         },
         "rod_3": {
             "shape": "cylinder",
             "length": 0.1,
             "radius": 0.015,
-            "x": 0.661,
+            "x": 0.261,
             "y": 0.0,
             "z": 0.9748,
             "quat": [0.5, 0.5, 0.5, 0.5],
-            "grip_pose": "top"
+            "grip_pose": "right"
         }
     },
 
@@ -37,57 +37,102 @@
             "x": 0.5780623,
             "y": 0.0426462,
             "z": 0.3737512,
-            "quat": [0.68608, -0.66905, -0.2288368, -0.1711402]
+            "quat": [0, 0, 0, 1.0]
         },
         "rod_2": {
             "x": 0.4586424484615876,
             "y": -0.0857995434168948,
             "z": 0.3737512667612569,
-            "quat": [0.0064741, 0.9582812, 0.021774585, -0.284923]
+            "quat": [0, 0, 1.0, 0]
         },
         "rod_3": {
             "x": 0.74153,
             "y": -0.109345,
             "z": 0.3737512,
-            "quat": [0.0064741, 0.9582812, 0.021774585, -0.284923]
+            "quat": [0, 0, 0, 1.0]
         }
     },
 
     "sequence": {
         "panda0_arm": [
             {
-                "task": "pick",
+                "task": "pick_pre",
                 "obj": "rod_1",
                 "id": 0
             },
             {
-                "task": "place",
+                "task": "pick",
                 "obj": "rod_1",
                 "id": 1
+            },
+            {
+                "task": "place",
+                "obj": "rod_1",
+                "id": 2
+            },
+            {
+                "task": "place_post",
+                "obj": "rod_1",
+                "id": 3
+            },
+            {
+                "task": "home",
+                "obj": "rod_1",
+                "id": 4
             }
         ],
         "panda1_arm": [
             {
+                "task": "pick_pre",
+                "obj": "rod_2",
+                "id": 5
+            },
+            {
                 "task": "pick",
                 "obj": "rod_2",
-                "id": 2
+                "id": 6
             },
             {
                 "task": "place",
                 "obj": "rod_2",
-                "id": 3
+                "id": 7
+            },
+            {
+                "task": "place_post",
+                "obj": "rod_2",
+                "id": 8
+            },
+            {
+                "task": "home",
+                "obj": "rod_2",
+                "id": 9
             }
         ],
         "panda2_arm": [
             {
+                "task": "pick_pre",
+                "obj": "rod_3",
+                "id": 10
+            },
+            {
                 "task": "pick",
                 "obj": "rod_3",
-                "id": 4
+                "id": 11
             },
             {
                 "task": "place",
                 "obj": "rod_3",
-                "id": 5
+                "id": 12
+            },
+            {
+                "task": "place_post",
+                "obj": "rod_3",
+                "id": 13
+            },
+            {
+                "task": "home",
+                "obj": "rod_3",
+                "id": 14
             }
         ] 
     },

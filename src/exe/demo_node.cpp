@@ -260,7 +260,7 @@ public:
                 ROS_INFO("Failed to plan");
                 return false;
             }
-            convertSolution(instance, plan, solution);        
+            convertSolution(instance, plan.trajectory_, solution);        
         }
 
         /*

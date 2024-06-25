@@ -50,7 +50,14 @@ protected:
 
 // utils
 bool convertSolution(std::shared_ptr<PlanInstance> instance,
-                    const moveit::planning_interface::MoveGroupInterface::Plan &plan,
+                    const moveit_msgs::RobotTrajectory &plan_traj,
                     std::vector<RobotTrajectory> &solution);
+
+
+bool convertSolution(std::shared_ptr<PlanInstance> instance,
+                    const moveit_msgs::RobotTrajectory &plan_traj,
+                    int robot_id,
+                    RobotTrajectory &solution);
+
 
 #endif // MR_PLANNER_PLANNER_H

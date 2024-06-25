@@ -265,7 +265,7 @@ public:
 
         if (success) {
             ROS_INFO("Planning succeeded");
-            convertSolution(instance_, my_plan, solution);
+            convertSolution(instance_, my_plan.trajectory_, solution);
             // set the new start state to the target state
         } else {
             ROS_ERROR("Planning failed");

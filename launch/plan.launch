@@ -29,7 +29,9 @@
 
         <!-- Start the planning node -->
         
-        <node name="plan_node" pkg="mr_planner" type="plan_node" output="screen" required="true">
+        <param name="planning_plugin" value="ompl_interface/OMPLPlanner"/>
+        <param name="request_adapters" value="default_planner_request_adapters/AddTimeParameterization"/>
+        <node launch-prefix="xterm -e gdb --args" name="plan_node" pkg="mr_planner" type="plan_node" output="screen" required="true">
             <param name="planner_type" value="$(arg planner)"/>
             <param name="config_fname" value="$(find mr_planner)/config/$(arg task).json"/>
             <param name="output_dir" value="$(find mr_planner)/outputs/$(arg task)"/>

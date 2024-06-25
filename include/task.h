@@ -164,6 +164,9 @@ public:
         return obj_nodes_;
     }
 
+    std::vector<ObjPtr> get_start_obj_nodes() const;
+    std::vector<ObjPtr> get_end_obj_nodes() const;
+
     bool bfs(std::shared_ptr<Activity> act_i, std::vector<std::vector<bool>> &visited, bool forward) const;
 
     std::vector<ObjPtr> find_indep_obj(std::shared_ptr<Activity> act) const;

@@ -124,6 +124,26 @@ ObjPtr ActivityGraph::get_last_obj(const std::string &obj_name) {
     return nullptr;
 }
 
+std::vector<ObjPtr> ActivityGraph::get_start_obj_nodes() const {
+    std::vector<ObjPtr> start_obj;
+    for (auto obj : obj_nodes_) {
+        if (obj->prev_detach == nullptr) {
+            start_obj.push_back(obj);
+        }
+    }
+    return start_obj;
+}
+
+std::vector<ObjPtr> ActivityGraph::get_end_obj_nodes() const {
+    std::vector<ObjPtr> end_obj;
+    for (auto obj : obj_nodes_) {
+        if (obj->next_attach == nullptr) {
+            end_obj.push_back(obj);
+        }
+    }
+    return end_obj;
+}
+
 
 
 bool ActivityGraph::saveGraphToFile(const std::string &filename) const {

@@ -196,7 +196,7 @@ private:
     int numIterations_ = 0;
     int totalTreeSize = 0;
     int numValidSamples_ = 0;
-    int batch_size = 200;
+    int batch_size = 500;
     int cur_batch_size = 0;
     std::chrono::time_point<std::chrono::system_clock> start_time_;
 

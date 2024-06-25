@@ -73,8 +73,8 @@ struct Object  {
     };
 
     Object() = default;
-    Object(const std::string &name, State state, double x, double y, double z, double qx, double qy, double qz, double qw):
-        name(name), state(state), x(x), y(y), z(z), qx(qx), qy(qy), qz(qz), qw(qw) 
+    Object(const std::string &name, const std::string& parent_link, State state, double x, double y, double z, double qx, double qy, double qz, double qw):
+        name(name), parent_link(parent_link), state(state), x(x), y(y), z(z), qx(qx), qy(qy), qz(qz), qw(qw) 
         {}
     
     std::string name;
@@ -197,6 +197,16 @@ public:
 
     virtual Object getObject(const std::string& name) const {
         return objects_.at(name);
+    }
+
+    virtual std::vector<Object> getAttachedObjects(int robot_id) const {
+        std::vector<Object> attached_objects;
+        for (const auto& obj : objects_) {
+            if (obj.second.robot_id == robot_id && obj.second.state == Object::State::Attached) {
+                attached_objects.push_back(obj.second);
+            }
+        }
+        return attached_objects;
     }
 
 protected:

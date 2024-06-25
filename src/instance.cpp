@@ -299,7 +299,13 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
         primitive.dimensions[primitive.BOX_X] = obj.length;
         primitive.dimensions[primitive.BOX_Y] = obj.width;
         primitive.dimensions[primitive.BOX_Z] = obj.height;
-    } 
+    }
+    else if (obj.shape == Object::Shape::Cylinder) {
+        primitive.type = primitive.CYLINDER;
+        primitive.dimensions.resize(2);
+        primitive.dimensions[primitive.CYLINDER_HEIGHT] = obj.length;
+        primitive.dimensions[primitive.CYLINDER_RADIUS] = obj.radius;
+    }
     geometry_msgs::Pose world_pose;
     world_pose.position.x = obj.x;
     world_pose.position.y = obj.y;
@@ -435,7 +441,7 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
 
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;
-    // if (old_parent_link == "world") {
+    // if (old_parent_link == "base") {
     //     moveit_msgs::CollisionObject co_remove;
     //     co_remove.id = obj.name;
     //     co_remove.header.frame_id = old_parent_link;
@@ -468,7 +474,7 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotP
     obj.state = Object::State::Static;
     obj.robot_id = 0;
     std::string old_parent_link = obj.parent_link;
-    obj.parent_link = "world";
+    obj.parent_link = "base";
 
     moveit_msgs::AttachedCollisionObject co_remove;
     co_remove.object.id = name;
@@ -477,7 +483,7 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotP
 
     // moveit_msgs::CollisionObject co;
     // co.id = obj.name;
-    // co.header.frame_id = "world";
+    // co.header.frame_id = "base";
     // co.operation = co.ADD;
 
     // geometry_msgs::Pose world_pose;

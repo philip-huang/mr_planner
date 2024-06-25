@@ -56,7 +56,7 @@ bool PriorityPlanner::getPlan(std::vector<RobotTrajectory> &solution) const {
 }
 
 bool convertSolution(std::shared_ptr<PlanInstance> instance,
-                    const moveit::planning_interface::MoveGroupInterface::Plan &plan,
+                    const moveit_msgs::RobotTrajectory &plan_traj,
                     std::vector<RobotTrajectory> &solution) {
     // Convert a MoveIt plan to a RobotTrajectory
     int numRobots = instance->getNumberOfRobots();
@@ -65,18 +65,18 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
         solution[i].robot_id = i;
     }
 
-    for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
+    for (int i = 0; i < plan_traj.joint_trajectory.points.size(); i++) {
         int st = 0;
         double timeDilation = 1;
         for (int j = 0; j < numRobots; j++) {
             RobotPose pose = instance->initRobotPose(j);
-            assert (st + pose.joint_values.size() <= plan.trajectory_.joint_trajectory.points[i].positions.size());
+            assert (st + pose.joint_values.size() <= plan_traj.joint_trajectory.points[i].positions.size());
             for (int k = 0; k < pose.joint_values.size(); k++) {
-                pose.joint_values[k] = plan.trajectory_.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
+                pose.joint_values[k] = plan_traj.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
             }
 
             if (i > 0) {
-                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
+                double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
                 double speed = std::abs(instance->computeDistance(solution[j].trajectory.back(), pose)) / dt;
                 if (speed > instance->getVMax(j)) {
                     timeDilation = std::max(timeDilation, speed / instance->getVMax(j));
@@ -88,12 +88,12 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
 
         for (int j = 0; j < numRobots; j++) {
             if (i > 0) {
-                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
+                double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
                 dt = dt * timeDilation;
                 solution[j].times.push_back(solution[j].times.back() + dt);
             }
             else {
-                solution[j].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
+                solution[j].times.push_back(plan_traj.joint_trajectory.points[i].time_from_start.toSec());
             }
         }
     }
@@ -103,5 +103,44 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
         solution[i].cost = solution[i].times.back();
     }
 
+    return true;
+}
+
+bool convertSolution(std::shared_ptr<PlanInstance> instance,
+                    const moveit_msgs::RobotTrajectory &plan_traj,
+                    int robot_id,
+                    RobotTrajectory &solution)
+{
+    
+    for (int i = 0; i < plan_traj.joint_trajectory.points.size(); i++) {
+        double timeDilation = 1;
+        RobotPose pose = instance->initRobotPose(robot_id);
+        
+        assert (pose.joint_values.size() == plan_traj.joint_trajectory.points[i].positions.size());
+        for (int k = 0; k < pose.joint_values.size(); k++) {
+            pose.joint_values[k] = plan_traj.joint_trajectory.points[i].positions[k];
+        }
+
+        if (i > 0) {
+            double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
+            double speed = std::abs(instance->computeDistance(solution.trajectory.back(), pose)) / dt;
+            if (speed > instance->getVMax(robot_id)) {
+                timeDilation = std::max(timeDilation, speed / instance->getVMax(robot_id));
+            }
+        }
+        solution.trajectory.push_back(pose);
+
+        if (i > 0) {
+            double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
+            dt = dt * timeDilation;
+            solution.times.push_back(solution.times.back() + dt);
+        }
+        else {
+            solution.times.push_back(plan_traj.joint_trajectory.points[i].time_from_start.toSec());
+        }
+    }
+
+
+    solution.cost = solution.times.back();
     return true;
 }
