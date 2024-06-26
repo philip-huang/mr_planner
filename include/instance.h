@@ -1,30 +1,26 @@
 #ifndef MR_PLANNER_INSTANCE_H
 #define MR_PLANNER_INSTANCE_H
 
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/robot_state/robot_state.h>
-#include <moveit/planning_scene/planning_scene.h>
-#include <actionlib/client/simple_action_client.h>
-#include <moveit_msgs/ExecuteTrajectoryAction.h>
-#include <moveit_msgs/ExecuteKnownTrajectory.h>
+// #include <moveit/planning_scene_interface/planning_scene_interface.h>
+// #include <moveit/move_group_interface/move_group_interface.h>
+// #include <moveit/robot_state/robot_state.h>
+// #include <moveit/planning_scene/planning_scene.h>
+// #include <actionlib/client/simple_action_client.h>
+// #include <moveit_msgs/ExecuteTrajectoryAction.h>
+// #include <moveit_msgs/ExecuteKnownTrajectory.h>
 
-#include <moveit_msgs/PlanningScene.h>
-#include <moveit_msgs/AttachedCollisionObject.h>
-#include <moveit_msgs/ApplyPlanningScene.h>
-#include <moveit/collision_detection_bullet/collision_env_bullet.h>
-#include <moveit/collision_detection_fcl/collision_detector_allocator_fcl.h>
-#include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
-
-#include <std_msgs/ColorRGBA.h>
+// #include <moveit_msgs/PlanningScene.h>
+// #include <moveit_msgs/AttachedCollisionObject.h>
+// #include <moveit_msgs/ApplyPlanningScene.h>
+// #include <moveit/collision_detection_bullet/collision_env_bullet.h>
+// #include <moveit/collision_detection_fcl/collision_detector_allocator_fcl.h>
+// #include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
 
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/serialization.hpp>
 #include <boost/serialization/shared_ptr.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
-#include <boost/archive/binary_iarchive.hpp>
 #include <memory>
 #include <vector>
 #include <random>
@@ -72,11 +68,6 @@ struct Object  {
         Mesh = 3,
     };
 
-    Object() = default;
-    Object(const std::string &name, const std::string& parent_link, State state, double x, double y, double z, double qx, double qy, double qz, double qw):
-        name(name), parent_link(parent_link), state(state), x(x), y(y), z(z), qx(qx), qy(qy), qz(qz), qw(qw) 
-        {}
-    
     std::string name;
     // mode of the object
     State state;
@@ -131,7 +122,7 @@ struct RobotPose {
         ar & joint_values;
     }
     int robot_id;
-    // RobotMode mode;
+    RobotMode mode;
     std::string robot_name; // same as group name in moveit
     std::vector<double> joint_values;
 };
@@ -154,12 +145,10 @@ public:
     virtual RobotPose interpolate(const RobotPose &a, const RobotPose&b, double t) const = 0;
     virtual void addMoveableObject(const Object& obj) { throw std::runtime_error("Not implemented");};
     virtual void moveObject(const Object& obj) { throw std::runtime_error("Not implemented");};
-    virtual void moveRobot(int robot_id, const RobotPose& pose) { throw std::runtime_error("Not implemented");};
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) { throw std::runtime_error("Not implemented");};
     virtual void updateScene() = 0;
     virtual void resetScene(bool reset_sim) = 0;
-    virtual void setPadding(double padding) {throw std::runtime_error("Not implemented");};
     virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) { throw std::runtime_error("Not implemented");};
     // Additional methods for future functionalities can be added here
     virtual ~PlanInstance() = default;
@@ -199,16 +188,6 @@ public:
         return objects_.at(name);
     }
 
-    virtual std::vector<Object> getAttachedObjects(int robot_id) const {
-        std::vector<Object> attached_objects;
-        for (const auto& obj : objects_) {
-            if (obj.second.robot_id == robot_id && obj.second.state == Object::State::Attached) {
-                attached_objects.push_back(obj.second);
-            }
-        }
-        return attached_objects;
-    }
-
 protected:
     int num_robots_;
     double v_max_ = 1.0;
@@ -234,10 +213,8 @@ public:
     // Implementation of abstract methods using MoveIt functionalities
     virtual void addMoveableObject(const Object& obj) override;
     virtual void moveObject(const Object& obj) override;
-    virtual void moveRobot(int robot_id, const RobotPose& pose) override;
     virtual void attachObjectToRobot(const std::string &name, int robot_id, const std::string &link_name, const RobotPose &pose) override;
     virtual void detachObjectFromRobot(const std::string& name, const RobotPose &pose) override;
-    virtual void setObjectColor(const std::string &name, double r, double g, double b, double a);
     virtual moveit_msgs::PlanningScene getPlanningSceneDiff() const {
         return planning_scene_diff_;
     }
@@ -246,7 +223,6 @@ public:
     }
     virtual void updateScene() override;
     virtual void resetScene(bool reset_sim) override;
-    virtual void setPadding(double padding) override;
 
     virtual bool setCollision(const std::string& obj_name, const std::string& link_name, bool allow) override;
 

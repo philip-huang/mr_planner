@@ -51,11 +51,6 @@ void PlanInstance::setVmax(double vmax) {
     v_max_ = vmax;
 }
 
-void MoveitInstance::setPadding(double padding) {
-    planning_scene_->getCollisionEnvNonConst()->setPadding(padding);
-    planning_scene_->propogateRobotPadding();
-}
-
 bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {
     /* check if there is robot-robot or scene collision for a set of poses for some robots*/
     /* true if has collision, false if no collision*/
@@ -70,13 +65,12 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     std::vector<double> all_joints;
     collision_detection::AllowedCollisionMatrix acm = planning_scene_->getAllowedCollisionMatrixNonConst();
 
-    // print the acm entry names
+    // // print the acm entry names
     // std::vector<std::string> acm_names;
     // acm.getAllEntryNames(acm_names);
     // for (const auto &entry : acm_names) {
-    //     std::cout << entry << " ";
+    //     log("ACM entry: " + entry, LogLevel::DEBUG);
     // }
-    // std::cout << std::endl;
 
     int index = 0;
     for (int i = 0; i < num_robots_; i++) {
@@ -116,9 +110,7 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
 
     c_res.clear();
     if (self) {
-        //robot_state.updateCollisionBodyTransforms();
-        //planning_scene_->getCollisionEnv()->checkSelfCollision(c_req, c_res, robot_state, acm);
-        planning_scene_->checkSelfCollision(c_req, c_res, robot_state, acm);  
+        planning_scene_->checkSelfCollision(c_req, c_res, robot_state, acm);
     } else {
         planning_scene_->checkCollision(c_req, c_res, robot_state, acm);
     }
@@ -299,13 +291,7 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
         primitive.dimensions[primitive.BOX_X] = obj.length;
         primitive.dimensions[primitive.BOX_Y] = obj.width;
         primitive.dimensions[primitive.BOX_Z] = obj.height;
-    }
-    else if (obj.shape == Object::Shape::Cylinder) {
-        primitive.type = primitive.CYLINDER;
-        primitive.dimensions.resize(2);
-        primitive.dimensions[primitive.CYLINDER_HEIGHT] = obj.length;
-        primitive.dimensions[primitive.CYLINDER_RADIUS] = obj.radius;
-    }
+    } 
     geometry_msgs::Pose world_pose;
     world_pose.position.x = obj.x;
     world_pose.position.y = obj.y;
@@ -326,28 +312,6 @@ void MoveitInstance::addMoveableObject(const Object& obj) {
     planning_scene_->usePlanningSceneMsg(planning_scene);
     
     planning_scene_diff_ = planning_scene;
-}
-
-void MoveitInstance::setObjectColor(const std::string &name, double r, double g, double b, double a) {
-    if (objects_.find(name) == objects_.end()) {
-        return;
-    }
-
-    moveit_msgs::ObjectColor oc;
-    oc.id = name;
-    oc.color.r = r;
-    oc.color.g = g;
-    oc.color.b = b;
-    oc.color.a = a;
-
-    moveit_msgs::PlanningScene planning_scene;
-    planning_scene.object_colors.push_back(oc);
-    planning_scene.is_diff = true;
-
-    planning_scene_->usePlanningSceneMsg(planning_scene);
-    moveit_msgs::ApplyPlanningScene srv;
-    srv.request.scene = planning_scene;
-    planning_scene_diff_client_.call(srv);
 }
 
 void MoveitInstance::moveObject(const Object& obj) {
@@ -375,22 +339,6 @@ void MoveitInstance::moveObject(const Object& obj) {
     planning_scene.world.collision_objects.push_back(co);
     planning_scene.is_diff = true;
 
-    planning_scene_->usePlanningSceneMsg(planning_scene);
-    planning_scene_diff_ = planning_scene;
-}
-
-void MoveitInstance::moveRobot(int robot_id, const RobotPose& pose) {
-    moveit_msgs::PlanningScene cur_scene;
-    planning_scene_->getPlanningSceneMsg(cur_scene);
-
-    moveit_msgs::PlanningScene planning_scene;
-    planning_scene.is_diff = true;
-    auto joint_names = planning_scene_->getRobotModel()->getJointModelGroup(robot_names_[robot_id])->getActiveJointModelNames();
-    for (int i = 0; i < pose.joint_values.size(); i++) {
-        planning_scene.robot_state.joint_state.name.push_back(joint_names[i]);
-        planning_scene.robot_state.joint_state.position.push_back(pose.joint_values[i]);
-    }
-    planning_scene.robot_state.attached_collision_objects = cur_scene.robot_state.attached_collision_objects;
     planning_scene_->usePlanningSceneMsg(planning_scene);
     planning_scene_diff_ = planning_scene;
 }
@@ -441,7 +389,7 @@ void MoveitInstance::attachObjectToRobot(const std::string &name, int robot_id, 
 
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;
-    // if (old_parent_link == "base") {
+    // if (old_parent_link == "world") {
     //     moveit_msgs::CollisionObject co_remove;
     //     co_remove.id = obj.name;
     //     co_remove.header.frame_id = old_parent_link;
@@ -474,7 +422,7 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotP
     obj.state = Object::State::Static;
     obj.robot_id = 0;
     std::string old_parent_link = obj.parent_link;
-    obj.parent_link = "base";
+    obj.parent_link = "world";
 
     moveit_msgs::AttachedCollisionObject co_remove;
     co_remove.object.id = name;
@@ -483,7 +431,7 @@ void MoveitInstance::detachObjectFromRobot(const std::string& name, const RobotP
 
     // moveit_msgs::CollisionObject co;
     // co.id = obj.name;
-    // co.header.frame_id = "base";
+    // co.header.frame_id = "world";
     // co.operation = co.ADD;
 
     // geometry_msgs::Pose world_pose;
@@ -558,7 +506,7 @@ bool MoveitInstance::setCollision(const std::string& obj_name, const std::string
             }
             // by default we allow object to object collision
             else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
-                acm.entry_values[i].enabled.push_back(false);
+                acm.entry_values[i].enabled.push_back(true);
             }
             else {
                 acm.entry_values[i].enabled.push_back(false);
@@ -571,7 +519,7 @@ bool MoveitInstance::setCollision(const std::string& obj_name, const std::string
                 new_entry.enabled.push_back(allow);
             }
             else if (objects_.find(acm.entry_names[i]) != objects_.end()) {
-                new_entry.enabled.push_back(false);
+                new_entry.enabled.push_back(true);
             }
             else {
                 new_entry.enabled.push_back(false);
