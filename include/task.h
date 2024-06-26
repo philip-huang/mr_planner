@@ -80,7 +80,6 @@ public:
     void serialize(Archive & ar, const unsigned int version)
     {
         ar & obj;
-        ar & obj_node_id;
         ar & prev_detach;
         ar & next_attach;
         ar & next_attach_link;
@@ -128,9 +127,9 @@ public:
     ActivityGraph() = default;
     ActivityGraph(int num_robots);
     
-    std::shared_ptr<Activity> add_act(int robot_id, Activity::Type type);
+    void add_act(int robot_id, Activity::Type type);
 
-    std::shared_ptr<Activity> add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep);
+    void add_act(int robot_id, Activity::Type type, std::shared_ptr<Activity> type2_dep);
     
     /* add a static object to the scene (no attached parent)*/
     ObjPtr add_obj(const Object &obj);
@@ -163,9 +162,6 @@ public:
     std::vector<ObjPtr> get_obj_nodes() const {
         return obj_nodes_;
     }
-
-    std::vector<ObjPtr> get_start_obj_nodes() const;
-    std::vector<ObjPtr> get_end_obj_nodes() const;
 
     bool bfs(std::shared_ptr<Activity> act_i, std::vector<std::vector<bool>> &visited, bool forward) const;
 
