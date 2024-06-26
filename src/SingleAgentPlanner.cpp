@@ -390,7 +390,7 @@
 //                 ind++;
 //             }
 //             if (ind + 1 == obs.times.size()) {
-//                 // assuming obstacle stays at the end of the trajectory
+//                 // assuming obstacle stays at thze end of the trajectory
 //                 obs_i_pose.push_back(obs.trajectory[ind]);
 //             } else {
 //                 double alpha = (t - obs.times[ind]) / (obs.times[ind + 1] - obs.times[ind]);

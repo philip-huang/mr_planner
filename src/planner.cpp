@@ -1,7 +1,9 @@
 #include "planner.h"
 #include "instance.h"
+#include "query.h"
 #include "logger.h"
 
+/*
 PriorityPlanner::PriorityPlanner(std::shared_ptr<PlanInstance> instance) : AbstractPlanner(instance) {
 }
 
@@ -56,7 +58,7 @@ bool PriorityPlanner::getPlan(std::vector<RobotTrajectory> &solution) const {
 }
 
 bool convertSolution(std::shared_ptr<PlanInstance> instance,
-                    const moveit_msgs::RobotTrajectory &plan_traj,
+                    const moveit::planning_interface::MoveGroupInterface::Plan &plan,
                     std::vector<RobotTrajectory> &solution) {
     // Convert a MoveIt plan to a RobotTrajectory
     int numRobots = instance->getNumberOfRobots();
@@ -65,18 +67,18 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
         solution[i].robot_id = i;
     }
 
-    for (int i = 0; i < plan_traj.joint_trajectory.points.size(); i++) {
+    for (int i = 0; i < plan.trajectory_.joint_trajectory.points.size(); i++) {
         int st = 0;
         double timeDilation = 1;
         for (int j = 0; j < numRobots; j++) {
             RobotPose pose = instance->initRobotPose(j);
-            assert (st + pose.joint_values.size() <= plan_traj.joint_trajectory.points[i].positions.size());
+            assert (st + pose.joint_values.size() <= plan.trajectory_.joint_trajectory.points[i].positions.size());
             for (int k = 0; k < pose.joint_values.size(); k++) {
-                pose.joint_values[k] = plan_traj.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
+                pose.joint_values[k] = plan.trajectory_.joint_trajectory.points[i].positions[k + pose.joint_values.size()*j];
             }
 
             if (i > 0) {
-                double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
+                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
                 double speed = std::abs(instance->computeDistance(solution[j].trajectory.back(), pose)) / dt;
                 if (speed > instance->getVMax(j)) {
                     timeDilation = std::max(timeDilation, speed / instance->getVMax(j));
@@ -88,12 +90,12 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
 
         for (int j = 0; j < numRobots; j++) {
             if (i > 0) {
-                double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
+                double dt = plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec() - plan.trajectory_.joint_trajectory.points[i-1].time_from_start.toSec();
                 dt = dt * timeDilation;
                 solution[j].times.push_back(solution[j].times.back() + dt);
             }
             else {
-                solution[j].times.push_back(plan_traj.joint_trajectory.points[i].time_from_start.toSec());
+                solution[j].times.push_back(plan.trajectory_.joint_trajectory.points[i].time_from_start.toSec());
             }
         }
     }
@@ -105,42 +107,60 @@ bool convertSolution(std::shared_ptr<PlanInstance> instance,
 
     return true;
 }
+*/
 
-bool convertSolution(std::shared_ptr<PlanInstance> instance,
-                    const moveit_msgs::RobotTrajectory &plan_traj,
-                    int robot_id,
-                    RobotTrajectory &solution)
-{
-    
-    for (int i = 0; i < plan_traj.joint_trajectory.points.size(); i++) {
-        double timeDilation = 1;
-        RobotPose pose = instance->initRobotPose(robot_id);
-        
-        assert (pose.joint_values.size() == plan_traj.joint_trajectory.points[i].positions.size());
-        for (int k = 0; k < pose.joint_values.size(); k++) {
-            pose.joint_values[k] = plan_traj.joint_trajectory.points[i].positions[k];
-        }
+/**
+ * @brief Plan for a single robot using AStar
+ * @param options: Planner options
+ * @param robot_id: Id of the robot
+ * @param solution: Solution for the robot
+ */
+bool CBSPlanner::planSingleAgent(const PlannerOptions &options, int robot_id, RobotTrajectory &solution) {
+    auto planner = std::make_shared<AStarPlanner>(instance_, robot_id);
+    if (planner->plan(options)) {
+        planner->getPlan(solution);
+        return true;
+    } else {
+        log("Failed to plan for robot " + std::to_string(robot_id) + "!", LogLevel::ERROR);
+        return false;
+    }
+}
 
-        if (i > 0) {
-            double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
-            double speed = std::abs(instance->computeDistance(solution.trajectory.back(), pose)) / dt;
-            if (speed > instance->getVMax(robot_id)) {
-                timeDilation = std::max(timeDilation, speed / instance->getVMax(robot_id));
-            }
-        }
-        solution.trajectory.push_back(pose);
-
-        if (i > 0) {
-            double dt = plan_traj.joint_trajectory.points[i].time_from_start.toSec() - plan_traj.joint_trajectory.points[i-1].time_from_start.toSec();
-            dt = dt * timeDilation;
-            solution.times.push_back(solution.times.back() + dt);
-        }
-        else {
-            solution.times.push_back(plan_traj.joint_trajectory.points[i].time_from_start.toSec());
-        }
+/**
+ * @brief Plan the trajectory for the robots using conflict-based search
+ */
+bool CBSPlanner::plan(const PlannerOptions &options) {
+    //Plan each robots solution using AStar
+    std::vector<RobotTrajectory> solution;
+    for (int i = 0; i < num_robots_; i++) {
+        planSingleAgent(options, i, solution[i]);
     }
 
+    //Create OOPEN set of options
+    std::vector<CBSNode> open;
 
-    solution.cost = solution.times.back();
-    return true;
+    //Create the initial node
+    CBSNode node(solution);
+    node.options = options;
+    node.conflicts = getConflicts(solution);
+    open.push_back(node);
+
+    //Iterate through the conflicts
+    while (open.size() != 0) {
+        //Get the first node
+        CBSNode node = open[0];
+        open.erase(open.begin());
+
+        //If no conflicts, return the solution
+        if (node.conflicts.size() == 0) {
+            solution_ = node.solution;
+            return true;
+        }
+
+        //Resolve the first conflict
+        Conflict conflict = node.conflicts[0];
+        std::vector<RobotTrajectory> newSolution;;
+        
+
+    }
 }

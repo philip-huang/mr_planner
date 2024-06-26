@@ -47,7 +47,7 @@ class Query {
     public:
         // Initialize the planner with a specific planning problem instance
         Query(std::shared_ptr<PlanInstance> instance, int robot_id) : 
-                        instance_(instance), robot_id_(robot_id) {}
+                        instance_(instance), robot_id_(robot_id), vMax_(instance->getVMax(robot_id)) {}
 
         virtual bool init(const PlannerOptions &options) = 0;
         
@@ -60,6 +60,7 @@ class Query {
         }
 
     protected:
+        double vMax_;
         std::shared_ptr<PlanInstance> instance_;
         int robot_id_;
         DynamicObstacles obstacles_;
@@ -106,8 +107,9 @@ class AStarPlanner : public Query {
         std::shared_ptr<Graph> graph_;
         std::shared_ptr<Vertex> start_;
         std::shared_ptr<Vertex> goal_;
-
-
 };
+
+typedef std::shared_ptr<Query> LLPlannerPtr;
+
 
 #endif // QUERY_H

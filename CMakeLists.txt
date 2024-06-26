@@ -9,7 +9,6 @@ add_compile_options(-std=c++11)
 add_definitions(-D_OS_UNIX)
 # Check if profiling is needed
 option(ENABLE_PROFILING "Enable profiling with gprof" OFF)
-option(BUILD_MOTOPLUS "Build MotoPlus" OFF)
 
 if (ENABLE_PROFILING)
     # Add the -pg flag to the compiler and linker flags
@@ -35,23 +34,6 @@ find_package(catkin REQUIRED COMPONENTS
   moveit_visual_tools
   tf2_geometry_msgs 
 )
-
-if (BUILD_MOTOPLUS)
-  # Attempt to find the hardware_interface library
-  find_library(HARDWARE_INTERFACE_LIB hardware_interface)
-  find_path(HARDWARE_INTERFACE_INCLUDE_DIR NAMES hardware_interface.h
-            HINTS /usr/local/include/hardware_interface)
-
-  if(HARDWARE_INTERFACE_LIB AND HARDWARE_INTERFACE_INCLUDE_DIR)
-    message(STATUS "Found hardware_interface library: ${HARDWARE_INTERFACE_LIB}")
-    message(STATUS "Found hardware_interface include directory: ${HARDWARE_INTERFACE_INCLUDE_DIR}")
-  else()
-    message(FATAL_ERROR "Could not find hardware_interface library and headers")
-  endif()
-
-  
-endif()
-
 
 # /* -------------------------------------------------------------------------- */
 # /*                               Catkin Package                               */
@@ -117,7 +99,7 @@ target_include_directories(lego PUBLIC
 # /*                             Testing Executables                            */
 # /* -------------------------------------------------------------------------- */
 add_executable(lego_node
-  src/exe/lego_node.cpp
+  src/lego_node.cpp
 )
 
 
@@ -132,7 +114,7 @@ install(TARGETS lego_node
 )
 
 add_executable(demo
-  src/exe/demo_node.cpp
+  src/demo_node.cpp
 )
 
 
@@ -146,7 +128,7 @@ install(TARGETS demo
 )
 
 add_executable(yk_robot
-  src/exe/yk_interface.cpp
+  src/yk_interface.cpp
 )
 
 target_include_directories(yk_robot PUBLIC
@@ -161,40 +143,3 @@ target_link_libraries(yk_robot
 install(TARGETS yk_robot
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-
-add_executable(plan_node
-  src/exe/plan_node.cpp
-)
-
-target_link_libraries(plan_node
-  ${PROJECT_NAME}
-  ${catkin_LIBRARIES}
-  jsoncpp
-)
-
-install(TARGETS plan_node
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-if (BUILD_MOTOPLUS)
-
-  add_executable(motoplus_node
-    src/exe/motoplus_node.cpp
-  )
-
-  target_include_directories(motoplus_node PUBLIC
-    ${HARDWARE_INTERFACE_INCLUDE_DIR})
-  
-  target_link_libraries(motoplus_node
-    ${PROJECT_NAME}
-    ${catkin_LIBRARIES}
-    ${Robot_Controller_LIBRARIES}
-    ${HARDWARE_INTERFACE_LIB}
-  )
-
-
-  install(TARGETS motoplus_node
-    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-  )
-
-endif()

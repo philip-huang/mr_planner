@@ -51,7 +51,7 @@
             <param name="planning_time_limit" value="4.0" />
             <param name="benchmark" value="false" />
 
-            <param name="pose_name" value="left_push_up" />
+            <param name="pose_name" value="left_push" />
         </node>
 
         <node name="test_collision" pkg="mr_planner" type="demo" output="screen" required="true" unless="$(arg demo)">
@@ -75,14 +75,8 @@
             <param name="backward_doubleloop" value="$(arg backward_doubleloop)" />
             <param name="forward_singleloop" value="$(arg forward_singleloop)" />
             <param name="biased_sample" value="$(arg biased_sample)" />
-            <param name="pose_name" value="left_push_up" />
-            <param name="pose_name1" value="ready_pose" />
-            <param name="pose_name2" value="left_rotated" />
-            <param name="pose_name3" value="ready_pose" />
-            <param name="pose_name4" value="right_rotated" />
-            <param name="pose_name5" value="right_push_up" />
-            <param name="pose_name6" value="ready_pose" />
-            <!-- <param name="pose_name" value="random1" />
+
+            <param name="pose_name" value="random1" />
             <param name="pose_name1" value="random2" />
             <param name="pose_name2" value="random3" />
             <param name="pose_name3" value="random4" />
@@ -94,7 +88,7 @@
             <param name="pose_name9" value="right_rotated" />
             <param name="pose_name10" value="left_push" />
             <param name="pose_name11" value="right_push" />
-            <param name="pose_name12" value="ready_pose" /> -->
+            <param name="pose_name12" value="ready_pose" />
         </node>
     </group>
 
