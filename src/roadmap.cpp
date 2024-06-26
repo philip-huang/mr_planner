@@ -6,29 +6,15 @@
 bool Roadmap::init(const RoadmapOptions &options) {
     num_samples_ = options.num_samples;
     max_dist_ = options.max_dist;
-
-    start_pose_ = instance_->getStartPose(robot_id_);
-    goal_pose_ = instance_->getGoalPose(robot_id_);
     roadmap_ = std::make_shared<Graph>();
-
-    buildRoadmap();
-    return true;
 }
 
 /**
  * @brief Build the roadmap
  */
-void Roadmap::buildRoadmap() {
+bool Roadmap::buildRoadmap() {
     RobotPose newpose;
     std::vector<std::shared_ptr<Vertex>> neighbors;
-    
-    //add/connect start and goal vertices
-    auto start = roadmap_->addVertex(start_pose_);
-    auto goal = roadmap_->addVertex(goal_pose_);
-
-    if (validateMotion(start, goal)) {
-        roadmap_->addEdge(start, goal);
-    }
     
     //add vertices and edges
     while (roadmap_->size < num_samples_) {
@@ -44,6 +30,7 @@ void Roadmap::buildRoadmap() {
             }
         }
     }
+    return true;
 }
 
 /**
@@ -81,4 +68,11 @@ bool Roadmap::validateMotion(const std::shared_ptr<Vertex> &u,
     return (!roadmap_->sameComponent(u, v) &&
             instance_->connect(v->pose, u->pose) && 
             instance_->computeDistance(v->pose, u->pose) < max_dist_);
+}
+
+/**
+ * @brief Query the roadmap
+ */
+std::shared_ptr<Graph> Roadmap::queryRoadmap() {
+    return roadmap_;
 }

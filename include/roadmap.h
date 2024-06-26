@@ -132,22 +132,19 @@ class Roadmap {
 
         virtual bool init(const RoadmapOptions &options);
 
-        void buildRoadmap();
+        bool buildRoadmap();
 
         std::vector<std::shared_ptr<Vertex>> nearestNeighbors(const std::shared_ptr<Vertex> &sample);
         
         bool validateMotion(const std::shared_ptr<Vertex> &a, 
                             const std::shared_ptr<Vertex> &b);
 
-        bool queryRoadmap(const RobotPose &start_pose, 
-                          const RobotPose &goal_pose);
+        std::shared_ptr<Graph> queryRoadmap();
 
     protected:
         int robot_id_;
         int num_samples_; 
         double max_dist_;
-        RobotPose start_pose_;
-        RobotPose goal_pose_;
         std::shared_ptr<PlanInstance> instance_;
         std::shared_ptr<Graph> roadmap_;
 };  
