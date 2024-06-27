@@ -176,6 +176,20 @@ install(TARGETS plan_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
+add_executable(lego_assign
+  src/exe/lego_assignment.cpp
+)
+
+target_link_libraries(lego_assign
+  ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  lego
+)
+
+install(TARGETS lego_assign
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 if (BUILD_MOTOPLUS)
 
   add_executable(motoplus_node

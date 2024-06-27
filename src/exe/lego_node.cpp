@@ -359,8 +359,6 @@ public:
         }
         std::vector<RobotTrajectory> solution;
         bool success = planJointSpace(poses, all_joints_given, solution);
-        int t_plan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
-        planning_time_ += (t_plan_ms * 0.001);
 
         if (success) {
             if (tpg_ == nullptr) {
@@ -369,6 +367,8 @@ public:
             tpg_->reset();
             
             success &= tpg_->init(instance_, solution, tpg_config);
+            int t_plan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t_start).count();
+            planning_time_ += (t_plan_ms * 0.001);
             //success &= tpg_->optimize(instance_, tpg_config);
             saveTPG(tpg_, output_dir_ + "/tpg_" + std::to_string(counter_) + ".txt");
             tpg_->saveToDotFile(output_dir_ + "/tpg_" + std::to_string(counter_) + ".dot");

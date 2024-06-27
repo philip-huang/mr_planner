@@ -491,7 +491,7 @@ void ADG::update_joint_states(const std::vector<double> &joint_states, int robot
     }
     if (error < 0.1) {
         executed_acts_[robot_id]->fetch_add(1);
-        log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::DEBUG);
+        log("Robot " + std::to_string(robot_id) + " finished activity " + act->type_string(), LogLevel::INFO);
         int act_id = executed_acts_[robot_id]->load();
         while (act_id < act_graph_.num_activities(robot_id) - 1 && act_graph_.get(robot_id, act_id)->type == Activity::Type::home){
             act_id ++;
@@ -499,7 +499,8 @@ void ADG::update_joint_states(const std::vector<double> &joint_states, int robot
         }
 
         // update any attached object
-        if (instance_) {
+        if (instance_ && act_id < act_graph_.num_activities(robot_id)) {
+            auto act = act_graph_.get(robot_id, act_id);
             for (auto obj : act->obj_attached) {
                 instance_->attachObjectToRobot(obj->obj.name, robot_id, obj->next_attach_link, act->start_pose);
                 instance_->updateScene();

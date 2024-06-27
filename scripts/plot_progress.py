@@ -35,7 +35,7 @@ plt.figure(figsize=(8, 12))
 plt.rcParams.update({'font.size': 15})
 
 for color, marker, algo, label in entries:
-    base_dir = '/home/philip/catkin_ws/src/mr_planner/outputs/lego/bridge_top'
+    base_dir = '/home/philip/catkin_ws/src/mr_planner/outputs/lego/tower'
 
     data_frames = [read_csv(base_dir, seed, algo) for seed in seeds]
     all_data = pd.concat(data_frames)
@@ -90,5 +90,5 @@ plt.subplot(3, 1, 3)
 plt.ylabel('# Shortcut Valid')
 
 plt.tight_layout()
-plt.savefig(f'../outputs/plots/lego_bridge_top.png')
+plt.savefig(f'../outputs/plots/lego_tower.png')
 plt.show()
