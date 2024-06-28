@@ -2,8 +2,10 @@
 <launch>
     <!-- Gazebo options -->
     <arg name="ns" default="/"/>
-    <arg name="use_rviz" default="false"/>
+    <arg name="use_rviz" default="true"/>
     <arg name="task" default="tower"/>
+
+    <env name="LIBGL_ALWAYS_SOFTWARE" value="1"/>
 
     <group ns="$(arg ns)">
         <include file="$(find dual_gp4_moveit_config)/launch/demo.launch">

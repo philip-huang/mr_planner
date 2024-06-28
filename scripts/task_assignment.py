@@ -12,21 +12,23 @@ class TaskAssignmentSolver:
         with open(out_dir + '/cost_matrix_a.csv', 'r') as f:
             header = f.readline()
             blocks = header.split(',')[:-1]
-            n = len(blocks)
+            t = len(blocks)
             self.block_names = blocks
 
         # read csv file cost_matri_a.csv
-        cost_matrix_a = np.genfromtxt(out_dir + '/cost_matrix_a.csv', delimiter=',', skip_header=1)[:, :n]
+        cost_matrix_a = np.genfromtxt(out_dir + '/cost_matrix_a.csv', delimiter=',', skip_header=1)[:, :t]
         # read csv file time_matrix_a.csv
-        cost_matrix_b = np.genfromtxt(out_dir + '/cost_matrix_b.csv', delimiter=',', skip_header=1)[:, :n]
+        cost_matrix_b = np.genfromtxt(out_dir + '/cost_matrix_b.csv', delimiter=',', skip_header=1)[:, :t]
         # read delta_matrix
-        delta_matrix = np.genfromtxt(out_dir + '/delta_matrix.csv', delimiter=',', skip_header=1)[:, :n]
+        delta_matrix = np.genfromtxt(out_dir + '/delta_matrix.csv', delimiter=',', skip_header=1)[:, :t]
         # read support matrix
-        s = np.genfromtxt(out_dir + '/support_matrix.csv', delimiter=',')[:, :n]
+        s = np.genfromtxt(out_dir + '/support_matrix.csv', delimiter=',')[:, :-1]
         # read s_j
         s_j = np.genfromtxt(out_dir + '/support_req.csv', delimiter=',')[:-1]
         # read precedence matrix
         precedence_matrix = np.genfromtxt(out_dir + '/precedence.csv', delimiter=',')
+        if len(precedence_matrix) > 0:
+            precedence_matrix = precedence_matrix[:, :2]
 
         cost_matrix = np.array([cost_matrix_a, cost_matrix_b])
 
@@ -160,4 +162,4 @@ def test(task='tower'):
         print(f"Task {a[0]} assigned to robot {a[1]} and lego block {a[2]} {solver.block_names[a[2]]}, support robot {a[3]}")
 
 example()
-test('bridge_top')
+test('bridge')

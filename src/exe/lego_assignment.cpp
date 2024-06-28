@@ -282,19 +282,38 @@ public:
         return;
     }
 
-    void calculateIKforLego(const Eigen::MatrixXd& cart_T, const Eigen::MatrixXd & home_q,
-            lego_manipulation::math::VectorJd& r1_cur_goal, lego_manipulation::math::VectorJd& r2_cur_goal,
-            bool &r1_reachable, bool &r2_reachable) {
+    void calculateIKforLego(const Eigen::MatrixXd& T, const Eigen::MatrixXd & home_q,
+            int robot_id, bool check_collision, lego_manipulation::math::VectorJd& joint_q, bool &reachable) {
         
-        r1_cur_goal = lego_manipulation::math::IK(home_q, cart_T.block(0, 3, 3, 1), cart_T.block(0, 0, 3, 3),
-                                                        lego_ptr_->robot_DH_tool_r1(), lego_ptr_->robot_base_r1(), 0, 10e4*5, 10e-4*5);
-        r2_cur_goal = lego_manipulation::math::IK(home_q, cart_T.block(0, 3, 3, 1), cart_T.block(0, 0, 3, 3),
-                                                        lego_ptr_->robot_DH_tool_r2(), lego_ptr_->robot_base_r2(), 0, 10e4*5, 10e-4*5);
+        if (robot_id == 0) {
+            joint_q = lego_manipulation::math::IK(home_q, T.block(0, 3, 3, 1), T.block(0, 0, 3, 3),
+                                                        lego_ptr_->robot_DH_tool_r1(), lego_ptr_->robot_base_r1(), 0, 10e4, 10e-4*5);
+        }
+        else {
+            joint_q = lego_manipulation::math::IK(home_q, T.block(0, 3, 3, 1), T.block(0, 0, 3, 3),
+                                                        lego_ptr_->robot_DH_tool_r2(), lego_ptr_->robot_base_r2(), 0, 10e4, 10e-4*5);
+        }
 
-        r1_reachable = (r1_cur_goal - home_q).norm() > 1e-6;
-        r2_reachable = (r2_cur_goal - home_q).norm() > 1e-6;
+        reachable = (joint_q - home_q).norm() > 1e-6;
+
+        if (check_collision && reachable) {
+            RobotPose pose = instance_->initRobotPose(robot_id);
+            for (int i = 0; i < 6; i++) {
+                pose.joint_values[i] = joint_q(i, 0) / 180.0 * M_PI;
+            }
+            bool hasCollision = instance_->checkCollision({pose}, false, true);
+            reachable &= !hasCollision;
+        }
     }
 
+    void visualize_robot_pose(const lego_manipulation::math::VectorJd &joint_q, int robot_id) {
+        RobotPose pose = instance_->initRobotPose(robot_id);
+        for (int i = 0; i < 6; i++) {
+            pose.joint_values[i] = joint_q(i, 0) / 180.0 * M_PI;
+        }
+        instance_->moveRobot(robot_id, pose);
+        instance_->updateScene();
+    }
 
     void calculateCostMatrix() {
         lego_manipulation::math::VectorJd r1_home = Eigen::MatrixXd::Zero(6, 1);
@@ -305,15 +324,16 @@ public:
         // copy the value of r1_home to r2_home
         lego_manipulation::math::VectorJd r2_home = r1_home;
 
-        // initialize support_t1, support_t2
+        // initialize home pose
         Eigen::MatrixXd home_q(lego_ptr_->robot_dof_1(), 1);
         home_q.col(0) << 0, 0, 0, 0, -90, 0;
         Eigen::Matrix4d home_T = lego_manipulation::math::FK(home_q, lego_ptr_->robot_DH_r1(), lego_ptr_->robot_base_r1(), false);
         home_T.col(3) << 0.2, 0, 0.4, 1; // Home X, Y, Z in base frame of the Flange
         home_T = lego_ptr_->world_base_frame() * home_T;
         home_q = lego_manipulation::math::IK(home_q, home_T.block(0, 3, 3, 1), home_T.block(0, 0, 3, 3),
-                                             lego_ptr_->robot_DH_r1(), lego_ptr_->robot_base_r1(), 0, 10e6, 10e-4*5); // Home
-
+                                             lego_ptr_->robot_DH_r1(), lego_ptr_->robot_base_r1(), 0, 10e4, 10e-4*5); // Home
+        
+        // initialize support_t1, support_t2
         Eigen::Matrix4d y_n90, y_s90, z_180;
         y_n90 << 0, 0, -1, 0, 
                 0, 1, 0, 0,
@@ -331,12 +351,19 @@ public:
         Eigen::MatrixXd support_pre_T2 = home_T * y_n90 * z_180;
         Eigen::MatrixXd support_T1 = home_T * y_s90;
         Eigen::MatrixXd support_pre_T1 = home_T * y_s90;
-
-
-        // calculate the ik for each lego block's initial pose
+        
         std::vector<std::string> brick_names = lego_ptr_->get_brick_names();
         int num_bricks = brick_names.size();
 
+        // initialize the cost matrix we want to calculate for milp solver
+        std::vector<std::vector<double>> cost_matrix_a(num_tasks_, std::vector<double>(num_bricks, 1000000));
+        std::vector<std::vector<double>> cost_matrix_b(num_tasks_, std::vector<double>(num_bricks, 1000000));
+        std::vector<std::vector<double>> support_matrix(2, std::vector<double>(num_tasks_, 1000000));
+        std::vector<std::vector<int>> delta_matrix(num_tasks_, std::vector<int>(num_bricks, 0));
+        std::vector<std::vector<int>> precedence;
+        std::vector<int> sup_required(num_tasks_, 0);
+
+        // calculate the ik for each lego block's initial pose
         std::vector<bool> lego_r1_reachable(num_bricks, false);
         std::vector<bool> lego_r2_reachable(num_bricks, false);
         std::vector<lego_manipulation::math::VectorJd> r1_lego_goals(num_bricks, Eigen::MatrixXd::Zero(6, 1));
@@ -350,17 +377,18 @@ public:
                                 -1, -1, -1, -1, press_side, cart_T);
 
             bool r1_reachable, r2_reachable;
-            calculateIKforLego(cart_T, home_q, r1_lego_goals[i], r2_lego_goals[i], r1_reachable, r2_reachable);
+            calculateIKforLego(cart_T, home_q, 0, false, r1_lego_goals[i], r1_reachable);
+            calculateIKforLego(cart_T, home_q, 1, false, r2_lego_goals[i], r2_reachable);
             lego_r1_reachable[i] = r1_reachable;
             lego_r2_reachable[i] = r2_reachable;
-        }
 
-        std::vector<std::vector<double>> cost_matrix_a(num_tasks_, std::vector<double>(num_bricks, 1000000));
-        std::vector<std::vector<double>> cost_matrix_b(num_tasks_, std::vector<double>(num_bricks, 1000000));
-        std::vector<std::vector<double>> support_matrix(2, std::vector<double>(num_tasks_, 1000000));
-        std::vector<std::vector<int>> delta_matrix(num_tasks_, std::vector<int>(num_bricks, 0));
-        std::vector<std::vector<int>> precedence;
-        std::vector<int> sup_required(num_tasks_, 0);
+            // find any blocks on top, add precedence
+            std::vector<std::string> above_bricks = lego_ptr_->get_brick_above(brick_name);
+            for (auto & above_brick : above_bricks) {
+                int above_idx = std::find(brick_names.begin(), brick_names.end(), above_brick) - brick_names.begin();
+                precedence.push_back({above_idx, i});
+            }
+        }
 
         for (int i = 0; i < num_tasks_; i++) {
             int task_idx = i + 1;
@@ -375,7 +403,16 @@ public:
             lego_ptr_->calc_brick_grab_pose(brick_name, 1, 0, cur_graph_node["x"].asInt(), cur_graph_node["y"].asInt(), 
                                 cur_graph_node["z"].asInt(), cur_graph_node["ori"].asInt(), cur_graph_node["press_side"].asInt(),
                                 cart_T);
-            calculateIKforLego(cart_T, home_q, r1_cur_goal, r2_cur_goal, r1_reachable, r2_reachable);
+            calculateIKforLego(cart_T, home_q, 0, true, r1_cur_goal, r1_reachable);
+            calculateIKforLego(cart_T, home_q, 1, true, r2_cur_goal, r2_reachable);
+
+            if (r1_reachable) {
+                visualize_robot_pose(r1_cur_goal, 0);
+            }
+            if (r2_reachable) {
+                visualize_robot_pose(r2_cur_goal, 1);
+            }
+            ros::Duration(1).sleep();
 
             std::string req_type = "b" + std::to_string(brick_id) + "_";
             for (int t = 0; t < num_bricks; t++) {
@@ -409,21 +446,25 @@ public:
                 lego_ptr_->calc_brick_sup_pose(brick_name, cart_T, cur_graph_node["sup_side"].asInt(), false, support_T1);
                 lego_ptr_->calc_brick_sup_pose(brick_name, cart_T, cur_graph_node["sup_side"].asInt(), false, support_T2);
                 
-                Eigen::MatrixXd init_q = Eigen::MatrixXd::Zero(6, 1);
-                r1_cur_goal = lego_manipulation::math::IK(init_q, support_T1.block(0, 3, 3, 1), support_T1.block(0, 0, 3, 3),
-                                        lego_ptr_->robot_DH_tool_r1(), lego_ptr_->robot_base_r1(), 0, 10e4*5, 10e-4);
-                r2_cur_goal = lego_manipulation::math::IK(init_q, support_T2.block(0, 3, 3, 1), support_T2.block(0, 0, 3, 3),
-                                        lego_ptr_->robot_DH_tool_r2(), lego_ptr_->robot_base_r2(), 0, 10e4*5, 10e-4);
-                bool r1_reachable = r1_cur_goal.norm() > 1e-6;
-                bool r2_reachable = r2_cur_goal.norm() > 1e-6;
+                Eigen::MatrixXd init_q = home_q;
+                init_q(4) = 30;
+                calculateIKforLego(support_pre_T1, init_q, 0, true, r1_cur_goal, r1_reachable);
+                calculateIKforLego(support_pre_T2, init_q, 1, true, r2_cur_goal, r2_reachable);
 
                 if (r1_reachable) {
                     support_matrix[0][i] = (r1_home - r1_cur_goal).norm();
+                    visualize_robot_pose(r1_cur_goal, 0);
                 }
                 if (r2_reachable) {
                     support_matrix[1][i] = (r2_home - r2_cur_goal).norm();
+                    visualize_robot_pose(r2_cur_goal, 1);
                 }
+                ros::Duration(1).sleep();
             }
+
+            // move the lego brick to the target pose
+            instance_->moveObject(getLegoTarget(task_idx));
+            instance_->updateScene();
 
         }
 
@@ -556,6 +597,7 @@ int main(int argc, char** argv) {
 
     planner.calculateCostMatrix();
 
+    ROS_INFO("Finished calculating cost matrix");
     
     ros::shutdown();
     return 0;

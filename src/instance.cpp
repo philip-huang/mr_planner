@@ -56,12 +56,16 @@ void MoveitInstance::setPadding(double padding) {
     planning_scene_->propogateRobotPadding();
 }
 
-bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self) const {
+bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool self, bool debug) const {
     /* check if there is robot-robot or scene collision for a set of poses for some robots*/
     /* true if has collision, false if no collision*/
     collision_detection::CollisionRequest c_req;
     collision_detection::CollisionResult c_res;
     c_req.group_name = joint_group_name_;
+    if (debug) {
+        c_req.contacts = true;
+        c_req.max_contacts = 10;
+    }
 
     // set the robot state to the one we are checking
     moveit::core::RobotState robot_state = planning_scene_->getCurrentStateNonConst();
@@ -122,6 +126,14 @@ bool MoveitInstance::checkCollision(const std::vector<RobotPose> &poses, bool se
     } else {
         planning_scene_->checkCollision(c_req, c_res, robot_state, acm);
     }
+
+    if (debug) {
+        std::cout << "Number of contacts: " << c_res.contacts.size() << std::endl;
+        for (const auto &contact : c_res.contacts) {
+            std::cout << "Contact between " << contact.first.first << " and " << contact.first.second << std::endl;
+        }
+    }
+
     return c_res.collision;
 }
 

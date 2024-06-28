@@ -144,7 +144,7 @@ public:
     }
     virtual void setStartPose(int robot_id, const std::vector<double>& pose);
     virtual void setGoalPose(int robot_id, const std::vector<double>& pose);
-    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const = 0;
+    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self, bool debug=false) const = 0;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const = 0;
     virtual bool connect(const RobotPose& a, const RobotPose& b, double col_step_size = 0.1) = 0;
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist,  RobotPose& result, double col_step_size = 0.1) = 0;
@@ -225,7 +225,7 @@ public:
     MoveitInstance(robot_state::RobotStatePtr kinematic_state,
                    const std::string &joint_group_name,
                    planning_scene::PlanningScenePtr planning_scene);
-    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self) const override;
+    virtual bool checkCollision(const std::vector<RobotPose> &poses, bool self, bool debug=false) const override;
     virtual double computeDistance(const RobotPose& a, const RobotPose &b) const override;
     virtual bool connect(const RobotPose& a, const RobotPose& b, double col_step_size = 0.1) override;
     virtual bool steer(const RobotPose& a, const RobotPose& b, double max_dist, RobotPose& result, double col_step_size = 0.1) override;

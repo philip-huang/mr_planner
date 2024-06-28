@@ -155,6 +155,7 @@ class Lego
                             Eigen::Matrix4d& out_pose);
 
         std::vector<std::string> get_brick_names();
+        std::vector<std::string> get_brick_above(const std::string& brick_name);
         geometry_msgs::Pose get_init_brick_pose(const std::string& brick_name);
         geometry_msgs::Pose get_curr_brick_pose(const std::string& brick_name);
         geometry_msgs::Pose get_table_pose();

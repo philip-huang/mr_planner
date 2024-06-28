@@ -1042,6 +1042,16 @@ std::vector<std::string> Lego::get_brick_names() {
     return brick_names;
 }
 
+std::vector<std::string> Lego::get_brick_above(const std::string& brick_name) {
+    std::vector<std::string> above_bricks;
+    for(auto brick:brick_map_[brick_name].top_connect)
+    {
+        above_bricks.push_back(brick.first);
+    }
+    return above_bricks;
+}
+
+
 geometry_msgs::Pose Lego::get_init_brick_pose(const std::string& brick_name)
 {
     geometry_msgs::Pose brick_pose;
